@@ -39,7 +39,7 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     const { data: documents } = await supabaseAdmin.rpc('match_documents', {
       query_embedding: embedding,
       match_threshold: 0.5, // Gemini embeddings might have different similarity scale
-      match_count: 3
+      match_count: 2 // Reduced from 3 for speed
     });
 
     const contextBlock = documents?.map((doc: any) => doc.content).join('\n---\n') || "";

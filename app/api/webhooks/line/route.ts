@@ -156,7 +156,7 @@ export async function POST(req: Request) {
                 const aiRes = await Promise.race([
                   generateAIResponse(conversation.id, text),
                   new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('AI timeout')), 28000) // 28s timeout
+                    setTimeout(() => reject(new Error('AI timeout')), 55000) // 55s timeout
                   )
                 ]) as any;
                 
