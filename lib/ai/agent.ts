@@ -17,6 +17,13 @@ key rules:
 
 export async function generateAIResponse(conversationId: string, userMessage: string): Promise<AIResponse> {
   try {
+    // Check API Key
+    if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+      console.error("❌ Missing GOOGLE_GENERATIVE_AI_API_KEY");
+      throw new Error("API Key not configured");
+    }
+
+    console.log('🤖 [Step 1] Loading conversation history...');
     // 1. Context Loading: Fetch last 10 messages
     const { data: history } = await supabaseAdmin
       .from('messages')
@@ -28,28 +35,36 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     const formattedHistory = (history || []).reverse().map(m => 
       `${m.sender_type === 'user' ? 'User' : 'Assistant'}: ${m.content}`
     ).join('\n');
+    
+    console.log(`✅ [Step 1] Loaded ${history?.length || 0} messages`);
 
     // 2. RAG Retrieval using pgvector (Gemini embedding-004 is 768 dimensions)
+    console.log('🔍 [Step 2] Generating embeddings...');
     const { embedding } = await embed({
       model: google.textEmbeddingModel('text-embedding-004') as any,
       value: userMessage,
     });
+    console.log(`✅ [Step 2] Embedding generated (${embedding.length} dimensions)`);
     
     // Note: match_documents must be updated to accept vector(768)
+    console.log('📚 [Step 3] Searching knowledge base...');
     const { data: documents } = await supabaseAdmin.rpc('match_documents', {
       query_embedding: embedding,
       match_threshold: 0.5, // Gemini embeddings might have different similarity scale
       match_count: 2 // Reduced from 3 for speed
     });
+    console.log(`✅ [Step 3] Found ${documents?.length || 0} relevant documents`);
 
     const contextBlock = documents?.map((doc: any) => doc.content).join('\n---\n') || "";
 
     // 3. Generate Response (Use Gemini 2.5 Flash - Newest)
+    console.log('✨ [Step 4] Calling Gemini API...');
     const { text } = await generateText({
       model: google('gemini-2.5-flash') as any, // Gemini 2.5 Flash
       system: SYSTEM_PROMPT + `\n\nContext from Knowledge Base:\n${contextBlock}`,
       prompt: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`,
     });
+    console.log(`✅ [Step 4] Gemini response received (${text.length} chars)`);
 
     // 4. Safety Layer & Post-processing
     const lowerText = text.toLowerCase();
