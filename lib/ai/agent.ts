@@ -101,11 +101,16 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       ? openai('gpt-4o-mini') // Fast and cheap
       : google('gemini-2.5-flash'); // Latest stable Gemini
     
-    const result = await generateText({
-      model: generationModel as any,
-      system: SYSTEM_PROMPT + `\n\nContext from Knowledge Base:\n${contextBlock}`,
-      prompt: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`,
-    });
+    const result = await Promise.race([
+      generateText({
+        model: generationModel as any,
+        system: SYSTEM_PROMPT + `\n\nContext from Knowledge Base:\n${contextBlock}`,
+        prompt: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`,
+      }),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('AI generation timeout')), 6000) // 6s timeout
+      )
+    ]) as any;
     
     const text = result.text || '';
     console.log(`✅ [Step 4] AI response received (${text.length} chars)`);
