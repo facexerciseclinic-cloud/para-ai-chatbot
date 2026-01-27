@@ -1,23 +1,22 @@
 import { generateAIResponse } from '@/lib/ai/agent';
+import { messagingApi } from '@line/bot-sdk'; // Import SDK directly
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import lineClient from '@/lib/line'; // MessagingApiClient
+// import lineClient from '@/lib/line'; // REMOVE static client
 import { WebhookEvent } from '@line/bot-sdk';
 import crypto from 'crypto';
 
-// Initialize Supabase Admin Client (Service Role for backend ops)
+// Initialize Supabase Admin
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const channelSecret = process.env.LINE_CHANNEL_SECRET || '';
-
-// Verify Signature Helper
-const verifySignature = (body: string, signature: string) => {
+// Helper: Dynamic Signature Verification
+const verifySignature = (body: string, signature: string, secret: string) => {
   const hash = crypto
-    .createHmac('sha256', channelSecret)
+    .createHmac('sha256', secret)
     .update(body)
     .digest('base64');
   return hash === signature;
@@ -28,19 +27,43 @@ export async function POST(req: Request) {
     const body = await req.text();
     const signature = req.headers.get('x-line-signature') as string;
 
-    if (!channelSecret) {
-      console.error('LINE_CHANNEL_SECRET is missing');
-      return NextResponse.json({ error: 'Config error' }, { status: 500 });
+    // 1. Parse Body first to find "Destination" (Bot User ID)
+    const jsonBody = JSON.parse(body);
+    const destination = jsonBody.destination; // LINE Webhook includes this!
+    const events = jsonBody.events;
+
+    if (!destination) {
+        // Fallback or Ping event
+        return NextResponse.json({ status: 'no_destination' });
     }
 
-    // 1. Verify Request
-    if (!verifySignature(body, signature)) {
+    // 2. Load Credentials dynamically from DB
+    const { data: channelConfig } = await supabase
+        .from('connected_channels')
+        .select('*')
+        .eq('platform', 'line')
+        .eq('platform_account_id', destination) // Match the bot receiving the message
+        .single();
+
+    if (!channelConfig) {
+        console.error(`No channel config found for destination: ${destination}`);
+        return NextResponse.json({ error: 'Channel not configured' }, { status: 404 });
+    }
+
+    const { channel_secret: channelSecret, access_token: channelAccessToken } = channelConfig;
+
+    // 3. Verify Signature using the retrieved secret
+    if (!verifySignature(body, signature, channelSecret)) {
+      console.error('Invalid LINE Signature');
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }
 
-    const { events } = JSON.parse(body);
+    // Initialize Dynamic Client
+    const client = new messagingApi.MessagingApiClient({
+        channelAccessToken: channelAccessToken,
+    });
 
-    // 2. Process Events
+    // 4. Process Events
     await Promise.all(
       events.map(async (event: WebhookEvent) => {
         if (event.type !== 'message' || event.message.type !== 'text') {
@@ -60,23 +83,20 @@ export async function POST(req: Request) {
           .single();
 
         if (!identity) {
-            // New User -> Create Customer + Identity
+            // New User -> Fetch Profile
             const PROFILE_URL = `https://api.line.me/v2/bot/profile/${userId}`;
             const profRes = await fetch(PROFILE_URL, {
-                headers: { Authorization: `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}` }
+                headers: { Authorization: `Bearer ${channelAccessToken}` } // Use Dynamic Token
             });
             const profile = await profRes.json();
             
-            // 1. Create Customer
+            // Create Customer logic... (Same as before)
             const { data: newCust, error: custErr } = await supabase
                 .from('customers')
                 .insert({ full_name: profile.displayName || 'LINE User' })
-                .select()
-                .single();
-            
+                .select().single();
             if (custErr) throw custErr;
 
-            // 2. Create Identity
             const { data: newIdent, error: identErr } = await supabase
                 .from('social_identities')
                 .insert({
@@ -85,10 +105,7 @@ export async function POST(req: Request) {
                     platform_user_id: userId,
                     profile_name: profile.displayName || 'LINE User',
                     avatar_url: profile.pictureUrl
-                })
-                .select()
-                .single();
-            
+                }).select().single();
             if (identErr) throw identErr;
             identity = newIdent;
         }
@@ -106,11 +123,10 @@ export async function POST(req: Request) {
                 .from('conversations')
                 .insert({
                     social_identity_id: identity.id,
+                    channel_id: channelConfig.id, // Link conversation to specific channel
                     status: 'active',
                     ai_mode: true
-                })
-                .select()
-                .single();
+                }).select().single();
             conversation = newConv;
         }
 
@@ -123,7 +139,7 @@ export async function POST(req: Request) {
             raw_payload: event as any
         });
 
-        // Update conversation timestamp
+        // Update timestamp
         await supabase
             .from('conversations')
             .update({ last_message_at: new Date().toISOString() })
@@ -132,10 +148,8 @@ export async function POST(req: Request) {
         // D. Auto-reply logic
         if (conversation.ai_mode && event.message.type === 'text') {
             try {
-              // 1. Generate Response
               const aiRes = await generateAIResponse(conversation.id, text);
               
-              // 2. Save Helper Message
               await supabase.from('messages').insert({
                 conversation_id: conversation.id,
                 sender_type: 'ai',
@@ -143,9 +157,11 @@ export async function POST(req: Request) {
                 content: aiRes.message
               });
 
-              // 3. Reply to LINE
-              await lineClient.replyMessage({
+              // Reply using Dynamic Client
+              await client.replyMessage({
                 replyToken: replyToken,
+                messages: [{ type: 'text', text: aiRes.message }]
+              });
                 messages: [{ type: 'text', text: aiRes.message }]
               });
 
