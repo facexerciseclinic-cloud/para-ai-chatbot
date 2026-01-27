@@ -39,7 +39,7 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       )
     ]) as any;
 
-    const formattedHistory = (history || []).reverse().map(m => 
+    const formattedHistory = (history || []).reverse().map((m: any) => 
       `${m.sender_type === 'user' ? 'User' : 'Assistant'}: ${m.content}`
     ).join('\n');
     
