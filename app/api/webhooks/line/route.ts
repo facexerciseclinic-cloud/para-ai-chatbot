@@ -1,3 +1,5 @@
+import { generateAIResponse } from '@/lib/ai/agent';
+
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import lineClient from '@/lib/line'; // MessagingApiClient
@@ -120,10 +122,6 @@ export async function POST(req: Request) {
             content: text,
             raw_payload: event as any
         });
-
-import { generateAIResponse } from '@/lib/ai/agent'; // Import AI Agent
-
-// ...existing code...
 
         // Update conversation timestamp
         await supabase
