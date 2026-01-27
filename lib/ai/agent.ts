@@ -83,12 +83,21 @@ export async function generateAIResponse(conversationId: string, userMessage: st
 
     // 3. Generate Response (Use Gemini 2.5 Flash - Newest)
     console.log('✨ [Step 4] Calling Gemini API...');
-    const { text } = await generateText({
-      model: google('gemini-2.5-flash') as any, // Gemini 2.5 Flash
+    const result = await generateText({
+      model: google('gemini-2.0-flash-exp') as any, // Try 2.0 instead of 2.5
       system: SYSTEM_PROMPT + `\n\nContext from Knowledge Base:\n${contextBlock}`,
       prompt: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`,
     });
+    
+    const text = result.text || '';
     console.log(`✅ [Step 4] Gemini response received (${text.length} chars)`);
+    console.log('📝 Response preview:', text.substring(0, 100));
+    
+    // Validate response
+    if (!text || text.trim().length === 0) {
+      console.error('⚠️ Gemini returned empty response');
+      throw new Error('Empty AI response');
+    }
 
     // 4. Safety Layer & Post-processing
     const lowerText = text.toLowerCase();
