@@ -44,9 +44,9 @@ export async function generateAIResponse(conversationId: string, userMessage: st
 
     const contextBlock = documents?.map((doc: any) => doc.content).join('\n---\n') || "";
 
-    // 3. Generate Response
+    // 3. Generate Response (Use stable model name)
     const { text } = await generateText({
-      model: google('gemini-1.5-flash') as any, // Fast & Cheap
+      model: google('gemini-1.5-flash-latest') as any, // Use '-latest' suffix for stable access
       system: SYSTEM_PROMPT + `\n\nContext from Knowledge Base:\n${contextBlock}`,
       prompt: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`,
     });
