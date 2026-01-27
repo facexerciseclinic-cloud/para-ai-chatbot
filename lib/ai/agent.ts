@@ -81,10 +81,10 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       // Continue without RAG context
     }
 
-    // 3. Generate Response (Use Gemini 1.5 Flash Latest - Most Stable)
+    // 3. Generate Response (Use Gemini 1.5 Flash)
     console.log('✨ [Step 4] Calling Gemini API...');
     const result = await generateText({
-      model: google('gemini-1.5-flash-latest') as any, // Most stable version
+      model: google('gemini-1.5-flash') as any, // Standard Gemini 1.5 Flash
       system: SYSTEM_PROMPT + `\n\nContext from Knowledge Base:\n${contextBlock}`,
       prompt: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`,
     });
