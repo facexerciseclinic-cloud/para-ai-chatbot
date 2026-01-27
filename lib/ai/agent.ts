@@ -46,7 +46,7 @@ export async function generateAIResponse(conversationId: string, userMessage: st
 
     // 3. Generate Response
     const { text } = await generateText({
-      model: google('gemini-1.5-flash'), // Fast & Cheap
+      model: google('gemini-1.5-flash') as any, // Fast & Cheap
       system: SYSTEM_PROMPT + `\n\nContext from Knowledge Base:\n${contextBlock}`,
       prompt: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`,
     });
