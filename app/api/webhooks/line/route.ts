@@ -148,8 +148,15 @@ export async function POST(req: Request) {
         // D. Auto-reply logic
         if (conversation.ai_mode && event.message.type === 'text') {
             try {
-              const aiRes = await generateAIResponse(conversation.id, text);
+              // Generate AI response with timeout
+              const aiRes = await Promise.race([
+                generateAIResponse(conversation.id, text),
+                new Promise((_, reject) => 
+                  setTimeout(() => reject(new Error('AI timeout')), 25000) // 25s timeout
+                )
+              ]) as any;
               
+              // Save AI response to DB
               await supabase.from('messages').insert({
                 conversation_id: conversation.id,
                 sender_type: 'ai',
@@ -157,21 +164,35 @@ export async function POST(req: Request) {
                 content: aiRes.message
               });
 
-              // Reply using Dynamic Client
+              // Reply using Dynamic Client (with validation)
+              const replyText = aiRes.message?.substring(0, 5000) || 'ขออภัยครับ ระบบขัดข้อง';
+              
               await client.replyMessage({
                 replyToken: replyToken,
-                messages: [{ type: 'text', text: aiRes.message }]
+                messages: [{ type: 'text', text: replyText }]
               });
 
-              // 4. Update Timestamp again
-               await supabase
+              // Update Timestamp
+              await supabase
                 .from('conversations')
                 .update({ last_message_at: new Date().toISOString() })
                 .eq('id', conversation.id);
 
-            } catch (aiErr) {
-               console.error("AI Error:", aiErr);
-               // Fallback: don't crash webhook, just log
+            } catch (aiErr: any) {
+               console.error("❌ AI Reply Error:", aiErr?.message || aiErr);
+               
+               // Try to send fallback message (if reply token still valid)
+               try {
+                  await client.replyMessage({
+                    replyToken: replyToken,
+                    messages: [{ 
+                      type: 'text', 
+                      text: '🙏 ขออภัยค่ะ ระบบ AI ตอบช้าไปหน่อย กรุณารอสักครู่หรือติดต่อเจ้าหน้าที่ค่ะ' 
+                    }]
+                  });
+               } catch (replyErr) {
+                  console.error("Failed to send fallback:", replyErr);
+               }
             }
         }
       })
