@@ -203,17 +203,6 @@ export async function POST(req: Request) {
                  }
               }
             })(); // Execute immediately but don't wait
-                  await client.replyMessage({
-                    replyToken: replyToken,
-                    messages: [{ 
-                      type: 'text', 
-                      text: '🙏 ขออภัยค่ะ ระบบ AI ตอบช้าไปหน่อย กรุณารอสักครู่หรือติดต่อเจ้าหน้าที่ค่ะ' 
-                    }]
-                  });
-               } catch (replyErr) {
-                  console.error("Failed to send fallback:", replyErr);
-               }
-            }
         }
       })
     );
