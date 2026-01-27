@@ -99,13 +99,22 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     
     const generationModel = USE_OPENAI
       ? openai('gpt-4o-mini') // Fast and cheap
-      : google('gemini-2.5-flash'); // Latest stable Gemini
+      : google('gemini-2.0-flash-exp'); // Use experimental 2.0 which is more stable
+    
+    console.log('📤 Sending to AI:', {
+      model: USE_OPENAI ? 'gpt-4o-mini' : 'gemini-2.0-flash-exp',
+      historyLength: formattedHistory.length,
+      contextLength: contextBlock.length,
+      messageLength: userMessage.length
+    });
     
     const result = await Promise.race([
       generateText({
         model: generationModel as any,
         system: SYSTEM_PROMPT + `\n\nContext from Knowledge Base:\n${contextBlock}`,
         prompt: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`,
+        temperature: 0.7, // Add some randomness
+        maxTokens: 500, // Limit response length
       }),
       new Promise((_, reject) => 
         setTimeout(() => reject(new Error('AI generation timeout')), 6000) // 6s timeout
