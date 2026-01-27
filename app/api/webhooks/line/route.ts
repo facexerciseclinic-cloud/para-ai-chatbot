@@ -121,17 +121,50 @@ export async function POST(req: Request) {
             raw_payload: event as any
         });
 
+import { generateAIResponse } from '@/lib/ai/agent'; // Import AI Agent
+
+// ...existing code...
+
         // Update conversation timestamp
         await supabase
             .from('conversations')
             .update({ last_message_at: new Date().toISOString() })
             .eq('id', conversation.id);
 
-        // D. (Optional) Auto-reply if AI is ON
-        // For now, we just save to DB. Next step is "AI Reply".
-        // We can add a simple "Received" echo for testing if needed.
+        // D. Auto-reply logic
+        if (conversation.ai_mode && event.message.type === 'text') {
+            try {
+              // 1. Generate Response
+              const aiRes = await generateAIResponse(conversation.id, text);
+              
+              // 2. Save Helper Message
+              await supabase.from('messages').insert({
+                conversation_id: conversation.id,
+                sender_type: 'ai',
+                content_type: 'text',
+                content: aiRes.text
+              });
+
+              // 3. Reply to LINE
+              await lineClient.replyMessage({
+                replyToken: replyToken,
+                messages: [{ type: 'text', text: aiRes.text }]
+              });
+
+              // 4. Update Timestamp again
+               await supabase
+                .from('conversations')
+                .update({ last_message_at: new Date().toISOString() })
+                .eq('id', conversation.id);
+
+            } catch (aiErr) {
+               console.error("AI Error:", aiErr);
+               // Fallback: don't crash webhook, just log
+            }
+        }
       })
     );
+// ...existing code...
 
     return NextResponse.json({ status: 'ok' });
   } catch (err) {
