@@ -1,7 +1,12 @@
 import { google } from '@ai-sdk/google';
+import { openai } from '@ai-sdk/openai';
 import { embed, generateText } from 'ai';
 import { supabaseAdmin } from '@/lib/supabase';
 import { Message, AIResponse } from '@/types';
+
+// Choose AI Provider based on available API Key
+const USE_OPENAI = !!process.env.OPENAI_API_KEY;
+const USE_GOOGLE = !!process.env.GOOGLE_GENERATIVE_AI_API_KEY;
 
 const SYSTEM_PROMPT = `
 You are "Aesthetic Consultant", an expert AI assistant for an aesthetic clinic.
@@ -18,10 +23,13 @@ key rules:
 export async function generateAIResponse(conversationId: string, userMessage: string): Promise<AIResponse> {
   try {
     // Check API Key
-    if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
-      console.error("❌ Missing GOOGLE_GENERATIVE_AI_API_KEY");
-      throw new Error("API Key not configured");
+    if (!USE_OPENAI && !USE_GOOGLE) {
+      console.error("❌ Missing both OPENAI_API_KEY and GOOGLE_GENERATIVE_AI_API_KEY");
+      throw new Error("No AI API Key configured");
     }
+
+    const aiProvider = USE_OPENAI ? 'OpenAI' : 'Google';
+    console.log(`🤖 Using ${aiProvider} for AI generation`);
 
     console.log('🤖 [Step 1] Loading conversation history...');
     // 1. Context Loading: Fetch last 5 messages (reduced from 10 for speed)
@@ -45,14 +53,19 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     
     console.log(`✅ [Step 1] Loaded ${history?.length || 0} messages`);
 
-    // 2. RAG Retrieval using pgvector (Gemini embedding-004 is 768 dimensions)
+    // 2. RAG Retrieval using pgvector
     console.log('🔍 [Step 2] Generating embeddings...');
     let contextBlock = "";
     
     try {
+      // Use appropriate embedding model
+      const embeddingModel = USE_OPENAI 
+        ? openai.embedding('text-embedding-3-small')
+        : google.textEmbeddingModel('text-embedding-004');
+      
       const { embedding } = await Promise.race([
         embed({
-          model: google.textEmbeddingModel('text-embedding-004') as any,
+          model: embeddingModel as any,
           value: userMessage,
         }),
         new Promise((_, reject) => 
@@ -76,13 +89,18 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       console.log(`✅ [Step 3] Found ${documents?.length || 0} relevant documents`);
       
       contextBlock = documents?.map((doc: any) => doc.content).join('\n---\n') || "";
-    } catch (ragError: any) {
-      console.warn(`⚠️ RAG failed, continuing without context:`, ragError.message);
-      // Continue without RAG context
-    }
-
-    // 3. Generate Response (Use Gemini 1.5 Flash)
-    console.log('✨ [Step 4] Calling Gemini API...');
+    // 3. Generate Response (Auto-select provider)
+    console.log(`✨ [Step 4] Calling ${aiProvider} API...`);
+    
+    const generationModel = USE_OPENAI
+      ? openai('gpt-4o-mini') // Fast and cheap
+      : google('gemini-1.5-flash');
+    
+    const result = await generateText({
+      model: generationModel as any,
+      system: SYSTEM_PROMPT + `\n\nContext from Knowledge Base:\n${contextBlock}`,
+      prompt: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`,
+    });sole.log('✨ [Step 4] Calling Gemini API...');
     const result = await generateText({
       model: google('gemini-1.5-flash') as any, // Standard Gemini 1.5 Flash
       system: SYSTEM_PROMPT + `\n\nContext from Knowledge Base:\n${contextBlock}`,
