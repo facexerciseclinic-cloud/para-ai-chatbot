@@ -23,13 +23,12 @@ key rules:
 export async function generateAIResponse(conversationId: string, userMessage: string): Promise<AIResponse> {
   try {
     // Check API Key
-    if (!USE_OPENAI && !USE_GOOGLE) {
-      console.error("❌ Missing both OPENAI_API_KEY and GOOGLE_GENERATIVE_AI_API_KEY");
+    if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+      console.error("❌ Missing GOOGLE_GENERATIVE_AI_API_KEY");
       throw new Error("No AI API Key configured");
     }
 
-    const aiProvider = USE_OPENAI ? 'OpenAI' : 'Google';
-    console.log(`🤖 Using ${aiProvider} for AI generation`);
+    console.log(`🤖 Using Gemini 3 Flash for AI generation`);
 
     console.log('🤖 [Step 1] Loading conversation history...');
     // 1. Context Loading: Fetch last 5 messages (reduced from 10 for speed)
@@ -54,18 +53,14 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     console.log(`✅ [Step 1] Loaded ${history?.length || 0} messages`);
 
     // 2. RAG Retrieval using pgvector
+    // 2. RAG Retrieval using pgvector
     console.log('🔍 [Step 2] Generating embeddings...');
     let contextBlock = "";
     
     try {
-      // Use appropriate embedding model
-      const embeddingModel = USE_OPENAI 
-        ? openai.embedding('text-embedding-3-small')
-        : google.textEmbeddingModel('text-embedding-004');
-      
       const { embedding } = await Promise.race([
         embed({
-          model: embeddingModel as any,
+          model: google.textEmbeddingModel('text-embedding-004') as any,
           value: userMessage,
         }),
         new Promise((_, reject) => 
@@ -73,7 +68,6 @@ export async function generateAIResponse(conversationId: string, userMessage: st
         )
       ]) as any;
       console.log(`✅ [Step 2] Embedding generated (${embedding.length} dimensions)`);
-      
       // Note: match_documents must be updated to accept vector(768)
       console.log('📚 [Step 3] Searching knowledge base...');
       const { data: documents } = await Promise.race([
@@ -94,15 +88,13 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       // Continue without RAG context
     }
 
-    // 3. Generate Response (Auto-select provider)
-    console.log(`✨ [Step 4] Calling ${aiProvider} API...`);
+    // 3. Generate Response (Use Gemini 3 Flash only)
+    console.log(`✨ [Step 4] Calling Gemini 3 Flash API...`);
     
-    const generationModel = USE_OPENAI
-      ? openai('gpt-4o-mini') // Fast and cheap
-      : google('gemini-2.0-flash-exp'); // Use experimental 2.0 which is more stable
+    const generationModel = google('gemini-3-flash'); // Latest Gemini 3 Flash
     
     console.log('📤 Sending to AI:', {
-      model: USE_OPENAI ? 'gpt-4o-mini' : 'gemini-2.0-flash-exp',
+      model: 'gemini-3-flash',
       historyLength: formattedHistory.length,
       contextLength: contextBlock.length,
       messageLength: userMessage.length
