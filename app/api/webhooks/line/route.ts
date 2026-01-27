@@ -145,44 +145,64 @@ export async function POST(req: Request) {
             .update({ last_message_at: new Date().toISOString() })
             .eq('id', conversation.id);
 
-        // D. Auto-reply logic
+        // D. Auto-reply logic (Process in background to avoid blocking webhook)
         if (conversation.ai_mode && event.message.type === 'text') {
-            try {
-              // Generate AI response with timeout
-              const aiRes = await Promise.race([
-                generateAIResponse(conversation.id, text),
-                new Promise((_, reject) => 
-                  setTimeout(() => reject(new Error('AI timeout')), 25000) // 25s timeout
-                )
-              ]) as any;
-              
-              // Save AI response to DB
-              await supabase.from('messages').insert({
-                conversation_id: conversation.id,
-                sender_type: 'ai',
-                content_type: 'text',
-                content: aiRes.message
-              });
+            // Don't await - let it run in background
+            (async () => {
+              try {
+                console.log('🤖 Generating AI response for:', text.substring(0, 50));
+                
+                // Generate AI response with timeout
+                const aiRes = await Promise.race([
+                  generateAIResponse(conversation.id, text),
+                  new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('AI timeout')), 28000) // 28s timeout
+                  )
+                ]) as any;
+                
+                console.log('✅ AI Response generated:', aiRes.message.substring(0, 50));
+                
+                // Save AI response to DB
+                await supabase.from('messages').insert({
+                  conversation_id: conversation.id,
+                  sender_type: 'ai',
+                  content_type: 'text',
+                  content: aiRes.message
+                });
 
-              // Reply using Dynamic Client (with validation)
-              const replyText = aiRes.message?.substring(0, 5000) || 'ขออภัยครับ ระบบขัดข้อง';
-              
-              await client.replyMessage({
-                replyToken: replyToken,
-                messages: [{ type: 'text', text: replyText }]
-              });
+                // Send using Push Message (no time limit, more reliable)
+                const replyText = aiRes.message?.substring(0, 5000) || 'ขออภัยครับ ระบบขัดข้อง';
+                
+                await client.pushMessage({
+                  to: userId, // Send directly to user
+                  messages: [{ type: 'text', text: replyText }]
+                });
+                
+                console.log('✅ Message pushed successfully to:', userId);
 
-              // Update Timestamp
-              await supabase
-                .from('conversations')
-                .update({ last_message_at: new Date().toISOString() })
-                .eq('id', conversation.id);
+                // Update Timestamp
+                await supabase
+                  .from('conversations')
+                  .update({ last_message_at: new Date().toISOString() })
+                  .eq('id', conversation.id);
 
-            } catch (aiErr: any) {
-               console.error("❌ AI Reply Error:", aiErr?.message || aiErr);
-               
-               // Try to send fallback message (if reply token still valid)
-               try {
+              } catch (aiErr: any) {
+                 console.error("❌ AI Background Error:", aiErr?.message || aiErr);
+                 
+                 // Send fallback message using Push (more reliable)
+                 try {
+                    await client.pushMessage({
+                      to: userId,
+                      messages: [{ 
+                        type: 'text', 
+                        text: '🙏 ขออภัยค่ะ ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้งหรือติดต่อเจ้าหน้าที่ค่ะ' 
+                      }]
+                    });
+                 } catch (pushErr) {
+                    console.error("❌ Failed to send fallback:", pushErr);
+                 }
+              }
+            })(); // Execute immediately but don't wait
                   await client.replyMessage({
                     replyToken: replyToken,
                     messages: [{ 
