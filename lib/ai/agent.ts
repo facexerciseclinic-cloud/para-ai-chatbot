@@ -31,7 +31,7 @@ export async function generateAIResponse(conversationId: string, userMessage: st
 
     // 2. RAG Retrieval using pgvector
     const { embedding } = await embed({
-      model: openai.embedding('text-embedding-3-small'),
+      model: openai.embedding('text-embedding-3-small') as any,
       value: userMessage,
     });
     
