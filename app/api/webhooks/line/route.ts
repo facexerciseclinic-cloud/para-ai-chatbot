@@ -145,18 +145,16 @@ export async function POST(req: Request) {
             .update({ last_message_at: new Date().toISOString() })
             .eq('id', conversation.id);
 
-        // D. Auto-reply logic (Process in background to avoid blocking webhook)
+        // D. Auto-reply logic (Must complete within 10s for Vercel)
         if (conversation.ai_mode && event.message.type === 'text') {
-            // Don't await - let it run in background
-            (async () => {
-              try {
+            try {
                 console.log('🤖 Generating AI response for:', text.substring(0, 50));
                 
-                // Generate AI response with timeout
+                // Generate AI response with SHORT timeout (8s to fit within 10s limit)
                 const aiRes = await Promise.race([
                   generateAIResponse(conversation.id, text),
                   new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('AI timeout')), 55000) // 55s timeout
+                    setTimeout(() => reject(new Error('AI timeout')), 8000) // 8s timeout
                   )
                 ]) as any;
                 
@@ -186,23 +184,22 @@ export async function POST(req: Request) {
                   .update({ last_message_at: new Date().toISOString() })
                   .eq('id', conversation.id);
 
-              } catch (aiErr: any) {
-                 console.error("❌ AI Background Error:", aiErr?.message || aiErr);
-                 
-                 // Send fallback message using Push (more reliable)
-                 try {
+            } catch (aiErr: any) {
+                console.error("❌ AI Error:", aiErr?.message || aiErr);
+                
+                // Send fallback message using Push (more reliable)
+                try {
                     await client.pushMessage({
                       to: userId,
                       messages: [{ 
                         type: 'text', 
-                        text: '🙏 ขออภัยค่ะ ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้งหรือติดต่อเจ้าหน้าที่ค่ะ' 
+                        text: '🙏 ขออภัยค่ะ ระบบกำลังประมวลผลช้าไปหน่อย กรุณารอสักครู่นะคะ' 
                       }]
                     });
-                 } catch (pushErr) {
+                } catch (pushErr) {
                     console.error("❌ Failed to send fallback:", pushErr);
-                 }
-              }
-            })(); // Execute immediately but don't wait
+                }
+            }
         }
       })
     );
