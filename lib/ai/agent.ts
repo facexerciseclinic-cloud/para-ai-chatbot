@@ -94,7 +94,7 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     
     const generationModel = USE_OPENAI
       ? openai('gpt-4o-mini') // Fast and cheap
-      : google('gemini-1.5-flash');
+      : google('gemini-2.5-flash'); // Latest stable Gemini
     
     const result = await generateText({
       model: generationModel as any,
