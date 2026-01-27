@@ -180,7 +180,7 @@ export default function ChatConsole() {
 
   // Toggle AI Mode Action
   const toggleAIMode = async () => {
-    if (!activeConversation) return;
+    if (!activeConversation || !supabase) return;
     const newMode = !activeConversation.ai_mode;
     
     // Optimistic Update UI
