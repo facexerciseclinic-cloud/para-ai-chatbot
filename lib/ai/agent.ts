@@ -65,11 +65,24 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       confidence: 1.0, // Simplified
     };
 
-  } catch (error) {
-    console.error("AI Generation Error:", error);
+  } catch (error: any) {
+    console.error("❌ AI Generation Error:", error);
+    console.error("Error details:", {
+      message: error?.message,
+      cause: error?.cause,
+      stack: error?.stack?.substring(0, 200)
+    });
+    
+    // Check if it's an API Key issue
+    const isKeyIssue = error?.message?.toLowerCase().includes('api key') || 
+                        error?.message?.toLowerCase().includes('authentication') ||
+                        error?.message?.toLowerCase().includes('unauthorized');
+    
     // Fallback if AI fails
     return {
-      message: "ขออภัยครับ ระบบขัดข้องชั่วคราว เดี๋ยวเจ้าหน้าที่รีบมาตอบนะครับ",
+      message: isKeyIssue 
+        ? "⚠️ ระบบ AI ยังไม่พร้อมใช้งาน (ไม่มี API Key) กรุณาติดต่อเจ้าหน้าที่ค่ะ"
+        : "ขออภัยค่ะ ระบบ AI ขัดข้องชั่วคราว เดี๋ยวเจ้าหน้าที่จะมาตอบให้นะคะ 🙏",
       shouldEscalate: true,
       confidence: 0,
     };
