@@ -162,8 +162,6 @@ export async function POST(req: Request) {
                 replyToken: replyToken,
                 messages: [{ type: 'text', text: aiRes.message }]
               });
-                messages: [{ type: 'text', text: aiRes.message }]
-              });
 
               // 4. Update Timestamp again
                await supabase
