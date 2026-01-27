@@ -140,13 +140,13 @@ export async function POST(req: Request) {
                 conversation_id: conversation.id,
                 sender_type: 'ai',
                 content_type: 'text',
-                content: aiRes.text
+                content: aiRes.message
               });
 
               // 3. Reply to LINE
               await lineClient.replyMessage({
                 replyToken: replyToken,
-                messages: [{ type: 'text', text: aiRes.text }]
+                messages: [{ type: 'text', text: aiRes.message }]
               });
 
               // 4. Update Timestamp again
