@@ -89,6 +89,11 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       console.log(`✅ [Step 3] Found ${documents?.length || 0} relevant documents`);
       
       contextBlock = documents?.map((doc: any) => doc.content).join('\n---\n') || "";
+    } catch (ragError: any) {
+      console.warn(`⚠️ RAG failed, continuing without context:`, ragError.message);
+      // Continue without RAG context
+    }
+
     // 3. Generate Response (Auto-select provider)
     console.log(`✨ [Step 4] Calling ${aiProvider} API...`);
     
@@ -100,15 +105,10 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       model: generationModel as any,
       system: SYSTEM_PROMPT + `\n\nContext from Knowledge Base:\n${contextBlock}`,
       prompt: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`,
-    });sole.log('✨ [Step 4] Calling Gemini API...');
-    const result = await generateText({
-      model: google('gemini-1.5-flash') as any, // Standard Gemini 1.5 Flash
-      system: SYSTEM_PROMPT + `\n\nContext from Knowledge Base:\n${contextBlock}`,
-      prompt: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`,
     });
     
     const text = result.text || '';
-    console.log(`✅ [Step 4] Gemini response received (${text.length} chars)`);
+    console.log(`✅ [Step 4] AI response received (${text.length} chars)`);
     console.log('📝 Response preview:', text.substring(0, 100));
     
     // Validate response
