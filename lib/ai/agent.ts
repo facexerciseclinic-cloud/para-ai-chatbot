@@ -1,4 +1,4 @@
-import { openai } from '@ai-sdk/openai';
+import { google } from '@ai-sdk/google';
 import { embed, generateText } from 'ai';
 import { supabaseAdmin } from '@/lib/supabase';
 import { Message, AIResponse } from '@/types';
@@ -29,15 +29,16 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       `${m.sender_type === 'user' ? 'User' : 'Assistant'}: ${m.content}`
     ).join('\n');
 
-    // 2. RAG Retrieval using pgvector
+    // 2. RAG Retrieval using pgvector (Gemini embedding-004 is 768 dimensions)
     const { embedding } = await embed({
-      model: openai.embedding('text-embedding-3-small') as any,
+      model: google.textEmbeddingModel('text-embedding-004') as any,
       value: userMessage,
     });
     
+    // Note: match_documents must be updated to accept vector(768)
     const { data: documents } = await supabaseAdmin.rpc('match_documents', {
       query_embedding: embedding,
-      match_threshold: 0.7,
+      match_threshold: 0.5, // Gemini embeddings might have different similarity scale
       match_count: 3
     });
 
@@ -45,7 +46,7 @@ export async function generateAIResponse(conversationId: string, userMessage: st
 
     // 3. Generate Response
     const { text } = await generateText({
-      model: openai('gpt-4o'),
+      model: google('gemini-1.5-flash'), // Fast & Cheap
       system: SYSTEM_PROMPT + `\n\nContext from Knowledge Base:\n${contextBlock}`,
       prompt: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`,
     });
