@@ -117,7 +117,7 @@ export async function generateAIResponse(conversationId: string, userMessage: st
         maxTokens: 500, // Limit response length
       }),
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('AI generation timeout')), 6000) // 6s timeout
+        setTimeout(() => reject(new Error('AI generation timeout')), 25000) // 25s timeout (risky for Vercel)
       )
     ]) as any;
     
