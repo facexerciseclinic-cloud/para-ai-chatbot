@@ -24,13 +24,20 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     }
 
     console.log('🤖 [Step 1] Loading conversation history...');
-    // 1. Context Loading: Fetch last 10 messages
-    const { data: history } = await supabaseAdmin
+    // 1. Context Loading: Fetch last 5 messages (reduced from 10 for speed)
+    const historyPromise = supabaseAdmin
       .from('messages')
       .select('sender_type, content')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: false })
-      .limit(10);
+      .limit(5);
+    
+    const { data: history } = await Promise.race([
+      historyPromise,
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('History timeout')), 5000)
+      )
+    ]) as any;
 
     const formattedHistory = (history || []).reverse().map(m => 
       `${m.sender_type === 'user' ? 'User' : 'Assistant'}: ${m.content}`
@@ -40,22 +47,39 @@ export async function generateAIResponse(conversationId: string, userMessage: st
 
     // 2. RAG Retrieval using pgvector (Gemini embedding-004 is 768 dimensions)
     console.log('🔍 [Step 2] Generating embeddings...');
-    const { embedding } = await embed({
-      model: google.textEmbeddingModel('text-embedding-004') as any,
-      value: userMessage,
-    });
-    console.log(`✅ [Step 2] Embedding generated (${embedding.length} dimensions)`);
+    let contextBlock = "";
     
-    // Note: match_documents must be updated to accept vector(768)
-    console.log('📚 [Step 3] Searching knowledge base...');
-    const { data: documents } = await supabaseAdmin.rpc('match_documents', {
-      query_embedding: embedding,
-      match_threshold: 0.5, // Gemini embeddings might have different similarity scale
-      match_count: 2 // Reduced from 3 for speed
-    });
-    console.log(`✅ [Step 3] Found ${documents?.length || 0} relevant documents`);
-
-    const contextBlock = documents?.map((doc: any) => doc.content).join('\n---\n') || "";
+    try {
+      const { embedding } = await Promise.race([
+        embed({
+          model: google.textEmbeddingModel('text-embedding-004') as any,
+          value: userMessage,
+        }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Embedding timeout')), 8000)
+        )
+      ]) as any;
+      console.log(`✅ [Step 2] Embedding generated (${embedding.length} dimensions)`);
+      
+      // Note: match_documents must be updated to accept vector(768)
+      console.log('📚 [Step 3] Searching knowledge base...');
+      const { data: documents } = await Promise.race([
+        supabaseAdmin.rpc('match_documents', {
+          query_embedding: embedding,
+          match_threshold: 0.5,
+          match_count: 2
+        }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Vector search timeout')), 5000)
+        )
+      ]) as any;
+      console.log(`✅ [Step 3] Found ${documents?.length || 0} relevant documents`);
+      
+      contextBlock = documents?.map((doc: any) => doc.content).join('\n---\n') || "";
+    } catch (ragError: any) {
+      console.warn(`⚠️ RAG failed, continuing without context:`, ragError.message);
+      // Continue without RAG context
+    }
 
     // 3. Generate Response (Use Gemini 2.5 Flash - Newest)
     console.log('✨ [Step 4] Calling Gemini API...');
