@@ -121,16 +121,18 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       stack: error?.stack?.substring(0, 200)
     });
     
-    // Check if it's an API Key issue
-    const isKeyIssue = error?.message?.toLowerCase().includes('api key') || 
-                        error?.message?.toLowerCase().includes('authentication') ||
-                        error?.message?.toLowerCase().includes('unauthorized');
+    // Check error type
+    const errorMsg = error?.message?.toLowerCase() || '';
+    const isQuotaExceeded = errorMsg.includes('quota') || errorMsg.includes('exceeded') || errorMsg.includes('limit');
+    const isKeyIssue = errorMsg.includes('api key') || errorMsg.includes('authentication') || errorMsg.includes('unauthorized');
     
     // Fallback if AI fails
     return {
-      message: isKeyIssue 
-        ? "⚠️ ระบบ AI ยังไม่พร้อมใช้งาน (ไม่มี API Key) กรุณาติดต่อเจ้าหน้าที่ค่ะ"
-        : "ขออภัยค่ะ ระบบ AI ขัดข้องชั่วคราว เดี๋ยวเจ้าหน้าที่จะมาตอบให้นะคะ 🙏",
+      message: isQuotaExceeded
+        ? "🙏 ขออภัยค่ะ ระบบ AI ใช้งานเกินโควต้าวันนี้แล้ว กรุณาติดต่อเจ้าหน้าที่โดยตรงนะคะ หรือลองใหม่พรุ่งนี้ค่ะ"
+        : isKeyIssue 
+          ? "⚠️ ระบบ AI ยังไม่พร้อมใช้งาน (ไม่มี API Key) กรุณาติดต่อเจ้าหน้าที่ค่ะ"
+          : "ขออภัยค่ะ ระบบ AI ขัดข้องชั่วคราว เดี๋ยวเจ้าหน้าที่จะมาตอบให้นะคะ 🙏",
       shouldEscalate: true,
       confidence: 0,
     };
