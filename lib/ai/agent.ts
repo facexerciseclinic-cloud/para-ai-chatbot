@@ -44,9 +44,9 @@ export async function generateAIResponse(conversationId: string, userMessage: st
 
     const contextBlock = documents?.map((doc: any) => doc.content).join('\n---\n') || "";
 
-    // 3. Generate Response (Use Gemini 2.0 Flash - Latest & Fastest)
+    // 3. Generate Response (Use Gemini 2.5 Flash - Newest)
     const { text } = await generateText({
-      model: google('gemini-2.0-flash-exp') as any, // Gemini 2.0 Flash (Experimental/Latest)
+      model: google('gemini-2.5-flash') as any, // Gemini 2.5 Flash
       system: SYSTEM_PROMPT + `\n\nContext from Knowledge Base:\n${contextBlock}`,
       prompt: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`,
     });
