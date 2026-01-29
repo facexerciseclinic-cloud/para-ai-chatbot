@@ -23,12 +23,12 @@ key rules:
 export async function generateAIResponse(conversationId: string, userMessage: string): Promise<AIResponse> {
   try {
     // Check API Key
-    if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
-      console.error("❌ Missing GOOGLE_GENERATIVE_AI_API_KEY");
-      throw new Error("No AI API Key configured");
+    if (!process.env.OPENAI_API_KEY) {
+      console.error("❌ Missing OPENAI_API_KEY");
+      throw new Error("No OpenAI API Key configured");
     }
 
-    console.log(`🤖 Using Gemini 3 Flash for AI generation`);
+    console.log(`🤖 Using OpenAI for AI generation`);
 
     console.log('🤖 [Step 1] Loading conversation history...');
     // 1. Context Loading: Fetch last 5 messages (reduced from 10 for speed)
@@ -60,7 +60,7 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     try {
       const { embedding } = await Promise.race([
         embed({
-          model: google.textEmbeddingModel('text-embedding-004') as any,
+          model: openai.embedding('text-embedding-3-small') as any,
           value: userMessage,
         }),
         new Promise((_, reject) => 
@@ -88,13 +88,13 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       // Continue without RAG context
     }
 
-    // 3. Generate Response (Use Gemini 1.5 Pro - Stable version)
-    console.log(`✨ [Step 4] Calling Gemini 1.5 Pro API...`);
+    // 3. Generate Response (Use OpenAI GPT-4o-mini)
+    console.log(`✨ [Step 4] Calling OpenAI API...`);
     
-    const generationModel = google('gemini-1.5-pro'); // Stable production model
+    const generationModel = openai('gpt-4o-mini'); // Fast and affordable
     
     console.log('📤 Sending to AI:', {
-      model: 'gemini-1.5-pro',
+      model: 'gpt-4o-mini',
       historyLength: formattedHistory.length,
       contextLength: contextBlock.length,
       messageLength: userMessage.length
