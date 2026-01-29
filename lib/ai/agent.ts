@@ -88,13 +88,13 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       // Continue without RAG context
     }
 
-    // 3. Generate Response (Use Gemini 3 Flash only)
-    console.log(`✨ [Step 4] Calling Gemini 3 Flash API...`);
+    // 3. Generate Response (Use Gemini 2.0 Flash Experimental)
+    console.log(`✨ [Step 4] Calling Gemini 2.0 Flash API...`);
     
-    const generationModel = google('gemini-3-flash'); // Latest Gemini 3 Flash
+    const generationModel = google('gemini-2.0-flash-exp'); // Latest working Gemini model
     
     console.log('📤 Sending to AI:', {
-      model: 'gemini-3-flash',
+      model: 'gemini-2.0-flash-exp',
       historyLength: formattedHistory.length,
       contextLength: contextBlock.length,
       messageLength: userMessage.length
