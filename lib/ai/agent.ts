@@ -104,13 +104,21 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     const result = await Promise.race([
       generateText({
         model: generationModel as any,
-        system: SYSTEM_PROMPT + `\n\nContext from Knowledge Base:\n${contextBlock}`,
-        prompt: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`,
+        messages: [
+          {
+            role: 'system',
+            content: SYSTEM_PROMPT + `\n\nContext from Knowledge Base:\n${contextBlock}`
+          },
+          {
+            role: 'user',
+            content: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`
+          }
+        ],
         temperature: 0.7,
-        maxTokens: 300, // Reduce tokens for faster response
+        maxTokens: 300,
       }),
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('AI generation timeout')), 20000) // 20s timeout
+        setTimeout(() => reject(new Error('AI generation timeout')), 20000)
       )
     ]) as any;
     
