@@ -105,11 +105,11 @@ export async function generateAIResponse(conversationId: string, userMessage: st
         model: generationModel as any,
         system: SYSTEM_PROMPT + `\n\nContext from Knowledge Base:\n${contextBlock}`,
         prompt: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`,
-        temperature: 0.7, // Add some randomness
-        maxTokens: 500, // Limit response length
+        temperature: 0.7,
+        maxTokens: 300, // Reduce tokens for faster response
       }),
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('AI generation timeout')), 25000) // 25s timeout (risky for Vercel)
+        setTimeout(() => reject(new Error('AI generation timeout')), 20000) // 20s timeout
       )
     ]) as any;
     
