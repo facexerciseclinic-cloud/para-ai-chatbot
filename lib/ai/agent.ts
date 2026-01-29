@@ -31,6 +31,20 @@ export async function generateAIResponse(conversationId: string, userMessage: st
 
     console.log(`🤖 Using OpenAI for AI generation`);
 
+    // Load AI Settings from database
+    const { data: settings } = await supabaseAdmin
+      .from('ai_settings')
+      .select('key, value')
+      .in('key', ['strict_mode', 'require_knowledge', 'fallback_message', 'min_confidence']);
+    
+    const settingsMap = new Map(settings?.map(s => [s.key, s.value]) || []);
+    const strictMode = settingsMap.get('strict_mode') === true;
+    const requireKnowledge = settingsMap.get('require_knowledge') === true;
+    const fallbackMessage = settingsMap.get('fallback_message') || 'ขอโทษค่ะ ตอนนี้ผมยังไม่มีข้อมูลเกี่ยวกับเรื่องนี้ รบกวนติดต่อเจ้าหน้าที่โดยตรงได้เลยนะคะ';
+    const minConfidence = Number(settingsMap.get('min_confidence') || 0.5);
+    
+    console.log('⚙️ AI Settings:', { strictMode, requireKnowledge, minConfidence });
+
     console.log('🤖 [Step 1] Loading conversation history...');
     // 1. Context Loading: Fetch last 5 messages (reduced from 10 for speed)
     const historyPromise = supabaseAdmin
@@ -75,7 +89,7 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       const { data: documents } = await Promise.race([
         supabaseAdmin.rpc('match_documents', {
           query_embedding: embedding,
-          match_threshold: 0.5,
+          match_threshold: minConfidence,
           match_count: 2
         }),
         new Promise((_, reject) => 
@@ -83,6 +97,16 @@ export async function generateAIResponse(conversationId: string, userMessage: st
         )
       ]) as any;
       console.log(`✅ [Step 3] Found ${documents?.length || 0} relevant documents`);
+      
+      // Check if knowledge is required but not found
+      if (requireKnowledge && (!documents || documents.length === 0)) {
+        console.warn('⚠️ Strict mode: No knowledge found, returning fallback');
+        return {
+          message: fallbackMessage,
+          shouldEscalate: true,
+          confidence: 0,
+        };
+      }
       
       contextBlock = documents?.map((doc: any) => doc.content).join('\n---\n') || "";
     } catch (ragError: any) {
@@ -97,12 +121,14 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       apiKey: process.env.OPENAI_API_KEY
     });
     
-    console.log('📤 Sending to AI:', {
-      model: 'gpt-4o-mini',
-      historyLength: formattedHistory.length,
-      contextLength: contextBlock.length,
-      messageLength: userMessage.length
-    });
+    // Build system prompt with strict rules if enabled
+    let systemPrompt = SYSTEM_PROMPT;
+    if (strictMode && contextBlock) {
+      systemPrompt += `\n\n⚠️ STRICT MODE ENABLED:
+- You MUST answer ONLY from the provided "Context from Knowledge Base"
+- DO NOT make up information or use general knowledge
+- If the answer is not in the context, say: "${fallbackMessage}"`;
+    }
     
     const completion = await Promise.race([
       openaiClient.chat.completions.create({
@@ -110,14 +136,14 @@ export async function generateAIResponse(conversationId: string, userMessage: st
         messages: [
           {
             role: 'system',
-            content: SYSTEM_PROMPT + `\n\nContext from Knowledge Base:\n${contextBlock}`
+            content: systemPrompt + `\n\nContext from Knowledge Base:\n${contextBlock}`
           },
           {
             role: 'user',
             content: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`
           }
         ],
-        temperature: 0.7,
+        temperature: strictMode ? 0.3 : 0.7, // Lower temperature in strict mode
         max_tokens: 300,
       }),
       new Promise((_, reject) => 
@@ -130,11 +156,11 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     console.log('📝 Response preview:', text.substring(0, 100));
     
     // Validate response
-    // Validate response
     if (!text || text.trim().length === 0) {
       console.error('⚠️ OpenAI returned empty response');
       throw new Error('Empty AI response');
     }
+    
     // 4. Safety Layer & Post-processing
     const lowerText = text.toLowerCase();
     const shouldEscalate = 

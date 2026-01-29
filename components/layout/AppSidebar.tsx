@@ -12,6 +12,7 @@ export default function AppSidebar() {
     { name: 'Inbox', href: '/dashboard', icon: MessageSquare },
     { name: 'AI Brain', href: '/dashboard/knowledge', icon: BookOpen },
     { name: 'Channels', href: '/dashboard/channels', icon: Radio },
+    { name: 'AI Settings', href: '/dashboard/settings', icon: Settings },
   ];
 
   return (
