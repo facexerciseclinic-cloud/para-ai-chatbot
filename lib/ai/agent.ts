@@ -1,6 +1,7 @@
 import { google } from '@ai-sdk/google';
 import { openai } from '@ai-sdk/openai';
-import { embed, generateText } from 'ai';
+import { embed } from 'ai';
+import OpenAI from 'openai';
 import { supabaseAdmin } from '@/lib/supabase';
 import { Message, AIResponse } from '@/types';
 
@@ -89,10 +90,12 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       // Continue without RAG context
     }
 
-    // 3. Generate Response (Use OpenAI GPT-4o-mini)
+    // 3. Generate Response (Use OpenAI SDK directly)
     console.log(`✨ [Step 4] Calling OpenAI API...`);
     
-    const generationModel = openai('gpt-4o-mini'); // Using gpt-4o-mini (Note: gpt-5-mini doesn't exist yet)
+    const openaiClient = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY
+    });
     
     console.log('📤 Sending to AI:', {
       model: 'gpt-4o-mini',
@@ -101,9 +104,9 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       messageLength: userMessage.length
     });
     
-    const result = await Promise.race([
-      generateText({
-        model: generationModel as any,
+    const completion = await Promise.race([
+      openaiClient.chat.completions.create({
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -115,28 +118,23 @@ export async function generateAIResponse(conversationId: string, userMessage: st
           }
         ],
         temperature: 0.7,
-        maxTokens: 300,
+        max_tokens: 300,
       }),
       new Promise((_, reject) => 
         setTimeout(() => reject(new Error('AI generation timeout')), 20000)
       )
-    ]) as any;
+    ]) as OpenAI.Chat.Completions.ChatCompletion;
     
-    // Debug: Log full result
-    console.log('🔍 Debug - Full API result:', JSON.stringify(result, null, 2));
-    
-    const text = result.text || '';
+    const text = completion.choices[0]?.message?.content || '';
     console.log(`✅ [Step 4] AI response received (${text.length} chars)`);
     console.log('📝 Response preview:', text.substring(0, 100));
     
     // Validate response
+    // Validate response
     if (!text || text.trim().length === 0) {
       console.error('⚠️ OpenAI returned empty response');
-      console.error('📊 Result object keys:', Object.keys(result));
-      console.error('📊 Result.text:', result.text);
       throw new Error('Empty AI response');
     }
-
     // 4. Safety Layer & Post-processing
     const lowerText = text.toLowerCase();
     const shouldEscalate = 
