@@ -120,7 +120,7 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     
     // Validate response
     if (!text || text.trim().length === 0) {
-      console.error('⚠️ Gemini returned empty response');
+      console.error('⚠️ OpenAI returned empty response');
       throw new Error('Empty AI response');
     }
 
