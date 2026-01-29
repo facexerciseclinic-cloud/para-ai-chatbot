@@ -53,17 +53,46 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     console.log(`✅ [Step 1] Loaded ${history?.length || 0} messages`);
 
     // 2. RAG Retrieval using pgvector
-    // 2. RAG Retrieval using pgvector (Disabled to save quota)
-    console.log('🔍 [Step 2] Skipping embeddings to save quota...');
+    // 2. RAG Retrieval using pgvector
+    console.log('🔍 [Step 2] Generating embeddings...');
     let contextBlock = "";
     
-    // Skip embedding completely to avoid quota issues
-    console.log('⚠️ RAG disabled, continuing without context');
+    try {
+      const { embedding } = await Promise.race([
+        embed({
+          model: openai.embedding('text-embedding-3-small') as any,
+          value: userMessage,
+        }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Embedding timeout')), 8000)
+        )
+      ]) as any;
+      console.log(`✅ [Step 2] Embedding generated (${embedding.length} dimensions)`);
+      
+      // Search knowledge base
+      console.log('📚 [Step 3] Searching knowledge base...');
+      const { data: documents } = await Promise.race([
+        supabaseAdmin.rpc('match_documents', {
+          query_embedding: embedding,
+          match_threshold: 0.5,
+          match_count: 2
+        }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Vector search timeout')), 5000)
+        )
+      ]) as any;
+      console.log(`✅ [Step 3] Found ${documents?.length || 0} relevant documents`);
+      
+      contextBlock = documents?.map((doc: any) => doc.content).join('\n---\n') || "";
+    } catch (ragError: any) {
+      console.warn(`⚠️ RAG failed, continuing without context:`, ragError.message);
+      // Continue without RAG context
+    }
 
     // 3. Generate Response (Use OpenAI GPT-4o-mini)
     console.log(`✨ [Step 4] Calling OpenAI API...`);
     
-    const generationModel = openai('gpt-4o-mini'); // Fast and affordable
+    const generationModel = openai('gpt-4o-mini'); // Using gpt-4o-mini (Note: gpt-5-mini doesn't exist yet)
     
     console.log('📤 Sending to AI:', {
       model: 'gpt-4o-mini',
