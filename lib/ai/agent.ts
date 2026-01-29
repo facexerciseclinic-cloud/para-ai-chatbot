@@ -114,6 +114,9 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       )
     ]) as any;
     
+    // Debug: Log full result
+    console.log('🔍 Debug - Full API result:', JSON.stringify(result, null, 2));
+    
     const text = result.text || '';
     console.log(`✅ [Step 4] AI response received (${text.length} chars)`);
     console.log('📝 Response preview:', text.substring(0, 100));
@@ -121,6 +124,8 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     // Validate response
     if (!text || text.trim().length === 0) {
       console.error('⚠️ OpenAI returned empty response');
+      console.error('📊 Result object keys:', Object.keys(result));
+      console.error('📊 Result.text:', result.text);
       throw new Error('Empty AI response');
     }
 
