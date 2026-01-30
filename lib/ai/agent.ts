@@ -69,11 +69,23 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     console.log(`✅ [Step 1] Loaded ${history?.length || 0} messages`);
 
     // 2. RAG Retrieval using pgvector
-    // 2. RAG Retrieval using pgvector
     console.log('🔍 [Step 2] Generating embeddings...');
     let contextBlock = "";
     
     try {
+      // 2.1 Load General category knowledge (always included)
+      console.log('📚 [Step 2.1] Loading General guidelines...');
+      const { data: generalKnowledge } = await supabaseAdmin
+        .from('knowledge_base')
+        .select('content')
+        .eq('category', 'General')
+        .not('embedding', 'is', null)
+        .limit(5);
+      
+      const generalContext = generalKnowledge?.map(k => k.content).join('\n---\n') || "";
+      console.log(`✅ Loaded ${generalKnowledge?.length || 0} General guidelines`);
+      
+      // 2.2 Generate embeddings for semantic search
       const { embedding } = await Promise.race([
         embed({
           model: openai.embedding('text-embedding-3-small') as any,
@@ -83,15 +95,15 @@ export async function generateAIResponse(conversationId: string, userMessage: st
           setTimeout(() => reject(new Error('Embedding timeout')), 8000)
         )
       ]) as any;
-      console.log(`✅ [Step 2] Embedding generated (${embedding.length} dimensions)`);
+      console.log(`✅ [Step 2.2] Embedding generated (${embedding.length} dimensions)`);
       
-      // Search knowledge base
+      // 2.3 Search knowledge base with semantic similarity
       console.log('📚 [Step 3] Searching knowledge base...');
       const { data: documents, error: searchError } = await Promise.race([
         supabaseAdmin.rpc('match_documents', {
           query_embedding: embedding,
           match_threshold: minConfidence,
-          match_count: 2
+          match_count: 3
         }),
         new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Vector search timeout')), 5000)
@@ -105,8 +117,16 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       console.log(`✅ [Step 3] Found ${documents?.length || 0} relevant documents`);
       console.log('📄 Documents:', JSON.stringify(documents, null, 2));
       
+      // Combine General guidelines with specific search results
+      const specificContext = documents?.map((doc: any) => doc.content).join('\n---\n') || "";
+      
+      // General context goes first (higher priority)
+      contextBlock = generalContext 
+        ? (specificContext ? `${generalContext}\n---\n${specificContext}` : generalContext)
+        : specificContext;
+      
       // Check if knowledge is required but not found
-      if (requireKnowledge && (!documents || documents.length === 0)) {
+      if (requireKnowledge && !contextBlock) {
         console.warn('⚠️ Require Knowledge enabled: No documents found, returning fallback');
         console.warn('🔧 Debug: minConfidence =', minConfidence, 'embedding length =', embedding.length);
         return {
@@ -115,8 +135,6 @@ export async function generateAIResponse(conversationId: string, userMessage: st
           confidence: 0,
         };
       }
-      
-      contextBlock = documents?.map((doc: any) => doc.content).join('\n---\n') || "";
     } catch (ragError: any) {
       console.warn(`⚠️ RAG failed, continuing without context:`, ragError.message);
       // Continue without RAG context
