@@ -68,67 +68,42 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     
     console.log(`✅ [Step 1] Loaded ${history?.length || 0} messages`);
 
-    // 2. RAG Retrieval using pgvector
-    console.log('🔍 [Step 2] Generating embeddings...');
+    // 2. RAG Retrieval - Load ALL knowledge base
+    console.log('📚 [Step 2] Loading ALL knowledge base...');
     let contextBlock = "";
     
     try {
-      // 2.1 Load General category knowledge (always included)
-      console.log('📚 [Step 2.1] Loading General guidelines...');
-      const { data: generalKnowledge } = await supabaseAdmin
+      // Load ALL knowledge from database (no vector search, just load everything)
+      const { data: allKnowledge, error: loadError } = await supabaseAdmin
         .from('knowledge_base')
-        .select('content')
-        .eq('category', 'General')
+        .select('content, category')
         .not('embedding', 'is', null)
-        .limit(5);
+        .order('category')
+        .order('created_at', { ascending: false });
       
-      const generalContext = generalKnowledge?.map(k => k.content).join('\n---\n') || "";
-      console.log(`✅ Loaded ${generalKnowledge?.length || 0} General guidelines`);
-      
-      // 2.2 Generate embeddings for semantic search
-      const { embedding } = await Promise.race([
-        embed({
-          model: openai.embedding('text-embedding-3-small') as any,
-          value: userMessage,
-        }),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Embedding timeout')), 8000)
-        )
-      ]) as any;
-      console.log(`✅ [Step 2.2] Embedding generated (${embedding.length} dimensions)`);
-      
-      // 2.3 Search knowledge base with semantic similarity
-      console.log('📚 [Step 3] Searching knowledge base...');
-      const { data: documents, error: searchError } = await Promise.race([
-        supabaseAdmin.rpc('match_documents', {
-          query_embedding: embedding,
-          match_threshold: minConfidence,
-          match_count: 3
-        }),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Vector search timeout')), 5000)
-        )
-      ]) as any;
-      
-      if (searchError) {
-        console.error('❌ Vector search error:', searchError);
+      if (loadError) {
+        console.error('❌ Knowledge load error:', loadError);
       }
       
-      console.log(`✅ [Step 3] Found ${documents?.length || 0} relevant documents`);
-      console.log('📄 Documents:', JSON.stringify(documents, null, 2));
+      console.log(`✅ [Step 2] Loaded ${allKnowledge?.length || 0} knowledge items`);
       
-      // Combine General guidelines with specific search results
-      const specificContext = documents?.map((doc: any) => doc.content).join('\n---\n') || "";
+      // Group by category for better organization
+      const generalKnowledge = allKnowledge?.filter(k => k.category === 'General') || [];
+      const otherKnowledge = allKnowledge?.filter(k => k.category !== 'General') || [];
       
-      // General context goes first (higher priority)
+      console.log(`📋 General: ${generalKnowledge.length}, Other: ${otherKnowledge.length}`);
+      
+      // Build context: General first, then others
+      const generalContext = generalKnowledge.map(k => k.content).join('\n---\n');
+      const otherContext = otherKnowledge.map(k => k.content).join('\n---\n');
+      
       contextBlock = generalContext 
-        ? (specificContext ? `${generalContext}\n---\n${specificContext}` : generalContext)
-        : specificContext;
+        ? (otherContext ? `${generalContext}\n---\n${otherContext}` : generalContext)
+        : otherContext;
       
       // Check if knowledge is required but not found
       if (requireKnowledge && !contextBlock) {
-        console.warn('⚠️ Require Knowledge enabled: No documents found, returning fallback');
-        console.warn('🔧 Debug: minConfidence =', minConfidence, 'embedding length =', embedding.length);
+        console.warn('⚠️ Require Knowledge enabled: No knowledge found in database');
         return {
           message: fallbackMessage,
           shouldEscalate: true,
