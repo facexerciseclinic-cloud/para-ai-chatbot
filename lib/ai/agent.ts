@@ -165,6 +165,26 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     ]) as OpenAI.Chat.Completions.ChatCompletion;
     
     const text = completion.choices[0]?.message?.content || '';
+    
+    // Token usage and cost calculation
+    const usage = completion.usage;
+    const promptTokens = usage?.prompt_tokens || 0;
+    const completionTokens = usage?.completion_tokens || 0;
+    const totalTokens = usage?.total_tokens || 0;
+    
+    // GPT-4o-mini pricing (as of 2024)
+    const inputCostPer1M = 0.150; // $0.150 per 1M input tokens
+    const outputCostPer1M = 0.600; // $0.600 per 1M output tokens
+    
+    const inputCost = (promptTokens / 1_000_000) * inputCostPer1M;
+    const outputCost = (completionTokens / 1_000_000) * outputCostPer1M;
+    const totalCost = inputCost + outputCost;
+    
+    console.log(`\n💰 Token Usage & Cost:`);
+    console.log(`   📥 Input tokens: ${promptTokens.toLocaleString()} ($${inputCost.toFixed(6)})`);
+    console.log(`   📤 Output tokens: ${completionTokens.toLocaleString()} ($${outputCost.toFixed(6)})`);
+    console.log(`   📊 Total tokens: ${totalTokens.toLocaleString()}`);
+    console.log(`   💵 Total cost: $${totalCost.toFixed(6)} (~฿${(totalCost * 35).toFixed(4)} THB)`);
     console.log(`✅ [Step 4] AI response received (${text.length} chars)`);
     console.log('📝 Response preview:', text.substring(0, 100));
     
