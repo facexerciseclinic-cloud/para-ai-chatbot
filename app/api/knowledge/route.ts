@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { google } from '@ai-sdk/google';
+import { openai } from '@ai-sdk/openai';
 import { embed } from 'ai';
 
 export async function POST(req: Request) {
@@ -11,9 +11,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Content is required' }, { status: 400 });
     }
 
-    // 1. Generate Embedding using Gemini
+    // 1. Generate Embedding using OpenAI (1536 dimensions)
     const { embedding } = await embed({
-      model: google.textEmbeddingModel('text-embedding-004') as any,
+      model: openai.embedding('text-embedding-3-small') as any,
       value: content,
     });
 
