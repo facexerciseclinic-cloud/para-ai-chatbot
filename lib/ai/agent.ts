@@ -87,7 +87,7 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       
       // Search knowledge base
       console.log('📚 [Step 3] Searching knowledge base...');
-      const { data: documents } = await Promise.race([
+      const { data: documents, error: searchError } = await Promise.race([
         supabaseAdmin.rpc('match_documents', {
           query_embedding: embedding,
           match_threshold: minConfidence,
@@ -97,11 +97,18 @@ export async function generateAIResponse(conversationId: string, userMessage: st
           setTimeout(() => reject(new Error('Vector search timeout')), 5000)
         )
       ]) as any;
+      
+      if (searchError) {
+        console.error('❌ Vector search error:', searchError);
+      }
+      
       console.log(`✅ [Step 3] Found ${documents?.length || 0} relevant documents`);
+      console.log('📄 Documents:', JSON.stringify(documents, null, 2));
       
       // Check if knowledge is required but not found
       if (requireKnowledge && (!documents || documents.length === 0)) {
-        console.warn('⚠️ Strict mode: No knowledge found, returning fallback');
+        console.warn('⚠️ Require Knowledge enabled: No documents found, returning fallback');
+        console.warn('🔧 Debug: minConfidence =', minConfidence, 'embedding length =', embedding.length);
         return {
           message: fallbackMessage,
           shouldEscalate: true,
