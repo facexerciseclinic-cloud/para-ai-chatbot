@@ -68,44 +68,49 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     
     console.log(`✅ [Step 1] Loaded ${history?.length || 0} messages`);
 
-    // 2. RAG Retrieval - Load knowledge base (limited)
-    console.log('📚 [Step 2] Loading knowledge base...');
+    // 2. Smart RAG: General (all) + Relevant (semantic search)
+    console.log('📚 [Step 2] Loading knowledge base (Smart RAG)...');
     let contextBlock = "";
     
     try {
-      // Load knowledge with limit to avoid token overflow
-      const { data: allKnowledge, error: loadError } = await supabaseAdmin
+      // 2.1 Always load ALL General guidelines (must-know rules)
+      console.log('📋 [Step 2.1] Loading General guidelines...');
+      const { data: generalKnowledge } = await supabaseAdmin
         .from('knowledge_base')
-        .select('content, category')
-        .not('embedding', 'is', null)
-        .order('category')
-        .order('created_at', { ascending: false })
-        .limit(20); // Limit to 20 most recent items
+        .select('content')
+        .eq('category', 'General')
+        .not('embedding', 'is', null);
       
-      if (loadError) {
-        console.error('❌ Knowledge load error:', loadError);
-      }
+      const generalContext = generalKnowledge?.map(k => k.content).join('\n---\n') || "";
+      console.log(`✅ Loaded ${generalKnowledge?.length || 0} General guidelines`);
       
-      console.log(`✅ [Step 2] Loaded ${allKnowledge?.length || 0} knowledge items`);
+      // 2.2 Semantic search for relevant specific knowledge
+      console.log('🔍 [Step 2.2] Semantic search for relevant knowledge...');
+      const { embedding } = await embed({
+        model: openai.embedding('text-embedding-3-small') as any,
+        value: userMessage,
+      });
       
-      // Group by category for better organization
-      const generalKnowledge = allKnowledge?.filter(k => k.category === 'General') || [];
-      const otherKnowledge = allKnowledge?.filter(k => k.category !== 'General') || [];
+      const { data: relevantDocs } = await supabaseAdmin.rpc('match_documents', {
+        query_embedding: embedding,
+        match_threshold: minConfidence,
+        match_count: 5
+      });
       
-      console.log(`📋 General: ${generalKnowledge.length}, Other: ${otherKnowledge.length}`);
+      const relevantContext = relevantDocs?.map((doc: any) => doc.content).join('\n---\n') || "";
+      console.log(`✅ Found ${relevantDocs?.length || 0} relevant documents`);
       
-      // Build context: General first, then others (truncate if too long)
-      const generalContext = generalKnowledge.map(k => k.content).join('\n---\n');
-      const otherContext = otherKnowledge.slice(0, 10).map(k => k.content).join('\n---\n');
-      
+      // Combine: General (all) + Relevant (top 5)
       contextBlock = generalContext 
-        ? (otherContext ? `${generalContext}\n---\n${otherContext}` : generalContext)
-        : otherContext;
+        ? (relevantContext ? `${generalContext}\n---\n${relevantContext}` : generalContext)
+        : relevantContext;
       
-      // Truncate context if too long (max ~8000 chars to leave room for response)
-      if (contextBlock.length > 8000) {
+      console.log(`📊 Total context length: ${contextBlock.length} chars`);
+      
+      // Truncate if still too long (safety net)
+      if (contextBlock.length > 10000) {
         console.warn(`⚠️ Context too long (${contextBlock.length} chars), truncating...`);
-        contextBlock = contextBlock.substring(0, 8000) + '\n\n[... more knowledge available ...]';
+        contextBlock = contextBlock.substring(0, 10000) + '\n\n[... more knowledge available ...]';
       }
       
       // Check if knowledge is required but not found
