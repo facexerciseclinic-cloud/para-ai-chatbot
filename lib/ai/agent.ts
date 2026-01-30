@@ -68,18 +68,19 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     
     console.log(`✅ [Step 1] Loaded ${history?.length || 0} messages`);
 
-    // 2. RAG Retrieval - Load ALL knowledge base
-    console.log('📚 [Step 2] Loading ALL knowledge base...');
+    // 2. RAG Retrieval - Load knowledge base (limited)
+    console.log('📚 [Step 2] Loading knowledge base...');
     let contextBlock = "";
     
     try {
-      // Load ALL knowledge from database (no vector search, just load everything)
+      // Load knowledge with limit to avoid token overflow
       const { data: allKnowledge, error: loadError } = await supabaseAdmin
         .from('knowledge_base')
         .select('content, category')
         .not('embedding', 'is', null)
         .order('category')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(20); // Limit to 20 most recent items
       
       if (loadError) {
         console.error('❌ Knowledge load error:', loadError);
@@ -93,13 +94,19 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       
       console.log(`📋 General: ${generalKnowledge.length}, Other: ${otherKnowledge.length}`);
       
-      // Build context: General first, then others
+      // Build context: General first, then others (truncate if too long)
       const generalContext = generalKnowledge.map(k => k.content).join('\n---\n');
-      const otherContext = otherKnowledge.map(k => k.content).join('\n---\n');
+      const otherContext = otherKnowledge.slice(0, 10).map(k => k.content).join('\n---\n');
       
       contextBlock = generalContext 
         ? (otherContext ? `${generalContext}\n---\n${otherContext}` : generalContext)
         : otherContext;
+      
+      // Truncate context if too long (max ~8000 chars to leave room for response)
+      if (contextBlock.length > 8000) {
+        console.warn(`⚠️ Context too long (${contextBlock.length} chars), truncating...`);
+        contextBlock = contextBlock.substring(0, 8000) + '\n\n[... more knowledge available ...]';
+      }
       
       // Check if knowledge is required but not found
       if (requireKnowledge && !contextBlock) {
@@ -145,10 +152,10 @@ export async function generateAIResponse(conversationId: string, userMessage: st
           }
         ],
         temperature: strictMode ? 0.3 : 0.7, // Lower temperature in strict mode
-        max_tokens: 300,
+        max_tokens: 500, // Increased for better responses
       }),
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('AI generation timeout')), 20000)
+        setTimeout(() => reject(new Error('AI generation timeout')), 30000) // Increased to 30s
       )
     ]) as OpenAI.Chat.Completions.ChatCompletion;
     
