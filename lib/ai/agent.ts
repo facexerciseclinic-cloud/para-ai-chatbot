@@ -38,10 +38,11 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       .in('key', ['strict_mode', 'require_knowledge', 'fallback_message', 'min_confidence']);
     
     const settingsMap = new Map(settings?.map(s => [s.key, s.value]) || []);
-    const strictMode = settingsMap.get('strict_mode') === true;
-    const requireKnowledge = settingsMap.get('require_knowledge') === true;
+    // Parse JSONB boolean values properly
+    const strictMode = settingsMap.get('strict_mode') === true || settingsMap.get('strict_mode') === 'true';
+    const requireKnowledge = settingsMap.get('require_knowledge') === true || settingsMap.get('require_knowledge') === 'true';
     const fallbackMessage = settingsMap.get('fallback_message') || 'ขอโทษค่ะ ตอนนี้ผมยังไม่มีข้อมูลเกี่ยวกับเรื่องนี้ รบกวนติดต่อเจ้าหน้าที่โดยตรงได้เลยนะคะ';
-    const minConfidence = Number(settingsMap.get('min_confidence') || 0.5);
+    const minConfidence = Number(settingsMap.get('min_confidence')) || 0.5;
     
     console.log('⚙️ AI Settings:', { strictMode, requireKnowledge, minConfidence });
 

@@ -11,10 +11,21 @@ export async function GET() {
 
     if (error) throw error;
 
-    // Convert to key-value map
+    // Convert to key-value map and parse JSONB values
     const settingsMap: Record<string, any> = {};
     settings?.forEach(s => {
-      settingsMap[s.key] = s.value;
+      // JSONB values need to be parsed
+      const value = s.value;
+      // Handle different types: boolean (true/false), string, number
+      if (value === true || value === false) {
+        settingsMap[s.key] = value;
+      } else if (typeof value === 'string') {
+        settingsMap[s.key] = value;
+      } else if (typeof value === 'number') {
+        settingsMap[s.key] = value;
+      } else {
+        settingsMap[s.key] = value;
+      }
     });
 
     return NextResponse.json(settingsMap);
