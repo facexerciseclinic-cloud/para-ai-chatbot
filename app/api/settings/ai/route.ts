@@ -4,12 +4,19 @@ import { supabaseAdmin } from '@/lib/supabase';
 // GET /api/settings/ai - Get all AI settings
 export async function GET() {
   try {
+    console.log('🔍 Fetching AI settings from Supabase...');
+    
     const { data: settings, error } = await supabaseAdmin
       .from('ai_settings')
-      .select('*')
+      .select('key, value, description')
       .order('key');
 
-    if (error) throw error;
+    if (error) {
+      console.error('❌ Supabase error:', error);
+      throw error;
+    }
+    
+    console.log('✅ Fetched settings:', settings);
 
     // Convert to key-value map and parse JSONB values
     const settingsMap: Record<string, any> = {};
@@ -28,11 +35,12 @@ export async function GET() {
       }
     });
 
+    console.log('📤 Returning settings map:', settingsMap);
     return NextResponse.json(settingsMap);
   } catch (error: any) {
-    console.error('Error fetching AI settings:', error);
+    console.error('❌ Error fetching AI settings:', error);
     return NextResponse.json(
-      { error: error.message },
+      { error: error.message || 'Unknown error', details: error },
       { status: 500 }
     );
   }

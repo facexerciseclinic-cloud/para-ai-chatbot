@@ -20,7 +20,16 @@ export default function AISettingsPage() {
   const loadSettings = async () => {
     try {
       const res = await fetch('/api/settings/ai');
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('API Error:', res.status, errorText);
+        throw new Error(`API returned ${res.status}`);
+      }
+      
       const data = await res.json();
+      console.log('Loaded settings:', data);
+      
       setSettings({
         strict_mode: data.strict_mode ?? true,
         require_knowledge: data.require_knowledge ?? true,
@@ -29,6 +38,7 @@ export default function AISettingsPage() {
       });
     } catch (error) {
       console.error('Failed to load settings:', error);
+      alert('❌ ไม่สามารถโหลดการตั้งค่าได้: ' + (error as Error).message);
     } finally {
       setLoading(false);
     }
