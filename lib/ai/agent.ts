@@ -107,7 +107,7 @@ export async function generateAIResponse(conversationId: string, userMessage: st
         const generalCompact = generalKnowledge?.map(k => {
           // Extract only key rules (remove verbose examples)
           const lines = k.content.split('\n');
-          const keyLines = lines.filter(line => 
+          const keyLines = lines.filter((line: string) => 
             line.includes('###') || // Headers
             line.includes('- ') || // Bullet points
             line.includes('**') || // Bold rules
