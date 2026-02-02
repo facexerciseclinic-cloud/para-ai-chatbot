@@ -188,7 +188,7 @@ export async function generateAIResponse(conversationId: string, userMessage: st
           max_tokens: 500,
         }),
         new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('AI generation timeout')), 90000) // Increased to 90s
+          setTimeout(() => reject(new Error('AI generation timeout')), 20000) // 20s - fallback quickly
         )
       ]) as OpenAI.Chat.Completions.ChatCompletion;
     } catch (error: any) {
