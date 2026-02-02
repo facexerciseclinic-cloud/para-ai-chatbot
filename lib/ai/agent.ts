@@ -78,15 +78,20 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       if (!useFinetunedModel) {
         console.log('🔍 Using RAG (no fine-tuned model)');
         
-        // 2.1 Always load ALL General guidelines (must-know rules)
+        // 2.1 Load key General guidelines (limit to most recent/important)
         console.log('📋 [Step 2.1] Loading General guidelines...');
         const { data: generalKnowledge } = await supabaseAdmin
           .from('knowledge_base')
           .select('content')
           .eq('category', 'General')
-          .not('embedding', 'is', null);
+          .not('embedding', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(1); // Only load most recent General guideline
         
-        const generalContext = generalKnowledge?.map(k => k.content).join('\n---\n') || "";
+        const generalContext = generalKnowledge?.map(k => {
+          // Truncate each General guideline to max 3000 chars
+          return k.content.length > 3000 ? k.content.substring(0, 3000) + '...' : k.content;
+        }).join('\n---\n') || "";
         console.log(`✅ Loaded ${generalKnowledge?.length || 0} General guidelines`);
         
         // 2.2 Semantic search for relevant specific knowledge
@@ -99,13 +104,13 @@ export async function generateAIResponse(conversationId: string, userMessage: st
         const { data: relevantDocs } = await supabaseAdmin.rpc('match_documents', {
           query_embedding: embedding,
           match_threshold: minConfidence,
-          match_count: 5
+          match_count: 3 // Reduced from 5 to 3
         });
         
         const relevantContext = relevantDocs?.map((doc: any) => doc.content).join('\n---\n') || "";
         console.log(`✅ Found ${relevantDocs?.length || 0} relevant documents`);
         
-        // Combine: General (all) + Relevant (top 5)
+        // Combine: General (limited) + Relevant (top 3)
         contextBlock = generalContext 
           ? (relevantContext ? `${generalContext}\n---\n${relevantContext}` : generalContext)
           : relevantContext;
@@ -113,9 +118,9 @@ export async function generateAIResponse(conversationId: string, userMessage: st
         console.log(`📊 Total context length: ${contextBlock.length} chars`);
         
         // Truncate if still too long (safety net)
-        if (contextBlock.length > 10000) {
-          console.warn(`⚠️ Context too long (${contextBlock.length} chars), truncating...`);
-          contextBlock = contextBlock.substring(0, 10000) + '\n\n[... more knowledge available ...]';
+        if (contextBlock.length > 5000) {
+          console.warn(`⚠️ Context too long (${contextBlock.length} chars), truncating to 5000...`);
+          contextBlock = contextBlock.substring(0, 5000) + '\n\n[... more knowledge available ...]';
         }
       } else {
         console.log('🎓 Using fine-tuned model with full knowledge base');
