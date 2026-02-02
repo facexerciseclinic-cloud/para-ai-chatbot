@@ -166,7 +166,7 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     const completion = await Promise.race([
       openaiClient.chat.completions.create({
         model: useFinetunedModel 
-          ? 'ft:gpt-4o-mini-2024-07-18:personal:admin-morden-v1:D4gyxjKF' 
+          ? 'ft:gpt-4o-mini-2024-07-18:personal:drdenv2:D4iJpcog' 
           : 'gpt-4o-mini',
         messages: [
           {
