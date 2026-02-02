@@ -73,61 +73,65 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     console.log('📚 [Step 2] Checking for new knowledge...');
     let contextBlock = "";
     
-    // Only load RAG context if NOT using fine-tuned model, or to supplement with new data
-    if (!useFinetunedModel) {
-      console.log('🔍 Using RAG (no fine-tuned model)');
     try {
-      // 2.1 Always load ALL General guidelines (must-know rules)
-      console.log('📋 [Step 2.1] Loading General guidelines...');
-      const { data: generalKnowledge } = await supabaseAdmin
-        .from('knowledge_base')
-        .select('content')
-        .eq('category', 'General')
-        .not('embedding', 'is', null);
-      
-      const generalContext = generalKnowledge?.map(k => k.content).join('\n---\n') || "";
-      console.log(`✅ Loaded ${generalKnowledge?.length || 0} General guidelines`);
-      
-      // 2.2 Semantic search for relevant specific knowledge
-      console.log('🔍 [Step 2.2] Semantic search for relevant knowledge...');
-      const { embedding } = await embed({
-        model: openai.embedding('text-embedding-3-small') as any,
-        value: userMessage,
-      });
-      
-      const { data: relevantDocs } = await supabaseAdmin.rpc('match_documents', {
-        query_embedding: embedding,
-        match_threshold: minConfidence,
-        match_count: 5
-      });
-      
-      const relevantContext = relevantDocs?.map((doc: any) => doc.content).join('\n---\n') || "";
-      console.log(`✅ Found ${relevantDocs?.length || 0} relevant documents`);
-      
-      // Combine: General (all) + Relevant (top 5)
-      contextBlock = generalContext 
-      console.log(`📊 Total context length: ${contextBlock.length} chars`);
-      
-      // Truncate if still too long (safety net)
-      if (contextBlock.length > 10000) {
-        console.warn(`⚠️ Context too long (${contextBlock.length} chars), truncating...`);
-        contextBlock = contextBlock.substring(0, 10000) + '\n\n[... more knowledge available ...]';
+      // Only load RAG context if NOT using fine-tuned model, or to supplement with new data
+      if (!useFinetunedModel) {
+        console.log('🔍 Using RAG (no fine-tuned model)');
+        
+        // 2.1 Always load ALL General guidelines (must-know rules)
+        console.log('📋 [Step 2.1] Loading General guidelines...');
+        const { data: generalKnowledge } = await supabaseAdmin
+          .from('knowledge_base')
+          .select('content')
+          .eq('category', 'General')
+          .not('embedding', 'is', null);
+        
+        const generalContext = generalKnowledge?.map(k => k.content).join('\n---\n') || "";
+        console.log(`✅ Loaded ${generalKnowledge?.length || 0} General guidelines`);
+        
+        // 2.2 Semantic search for relevant specific knowledge
+        console.log('🔍 [Step 2.2] Semantic search for relevant knowledge...');
+        const { embedding } = await embed({
+          model: openai.embedding('text-embedding-3-small') as any,
+          value: userMessage,
+        });
+        
+        const { data: relevantDocs } = await supabaseAdmin.rpc('match_documents', {
+          query_embedding: embedding,
+          match_threshold: minConfidence,
+          match_count: 5
+        });
+        
+        const relevantContext = relevantDocs?.map((doc: any) => doc.content).join('\n---\n') || "";
+        console.log(`✅ Found ${relevantDocs?.length || 0} relevant documents`);
+        
+        // Combine: General (all) + Relevant (top 5)
+        contextBlock = generalContext 
+          ? (relevantContext ? `${generalContext}\n---\n${relevantContext}` : generalContext)
+          : relevantContext;
+        
+        console.log(`📊 Total context length: ${contextBlock.length} chars`);
+        
+        // Truncate if still too long (safety net)
+        if (contextBlock.length > 10000) {
+          console.warn(`⚠️ Context too long (${contextBlock.length} chars), truncating...`);
+          contextBlock = contextBlock.substring(0, 10000) + '\n\n[... more knowledge available ...]';
+        }
+      } else {
+        console.log('🎓 Using fine-tuned model - knowledge embedded in model');
+        // Optionally load only very recent knowledge (last 7 days) to supplement
+        const { data: recentKnowledge } = await supabaseAdmin
+          .from('knowledge_base')
+          .select('content')
+          .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+          .not('embedding', 'is', null)
+          .limit(3);
+        
+        if (recentKnowledge && recentKnowledge.length > 0) {
+          contextBlock = '📌 Recent Updates:\n' + recentKnowledge.map(k => k.content).join('\n---\n');
+          console.log(`✅ Loaded ${recentKnowledge.length} recent knowledge items (last 7 days)`);
+        }
       }
-    } else {
-      console.log('🎓 Using fine-tuned model - knowledge embedded in model');
-      // Optionally load only very recent knowledge (last 7 days) to supplement
-      const { data: recentKnowledge } = await supabaseAdmin
-        .from('knowledge_base')
-        .select('content')
-        .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
-        .not('embedding', 'is', null)
-        .limit(3);
-      
-      if (recentKnowledge && recentKnowledge.length > 0) {
-        contextBlock = '📌 Recent Updates:\n' + recentKnowledge.map(k => k.content).join('\n---\n');
-        console.log(`✅ Loaded ${recentKnowledge.length} recent knowledge items (last 7 days)`);
-      }
-    }
       
       // Check if knowledge is required but not found
       if (requireKnowledge && !contextBlock && !useFinetunedModel) {
