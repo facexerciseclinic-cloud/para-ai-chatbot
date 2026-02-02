@@ -135,9 +135,6 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       
       // Check if knowledge is required but not found
       if (requireKnowledge && !contextBlock && !useFinetunedModel) {
-      
-      // Check if knowledge is required but not found
-      if (requireKnowledge && !contextBlock) {
         console.warn('⚠️ Require Knowledge enabled: No knowledge found in database');
         return {
           message: fallbackMessage,
