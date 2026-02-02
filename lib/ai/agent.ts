@@ -145,19 +145,19 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     
     const completion = await Promise.race([
       openaiClient.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'ft:gpt-4o-mini-2024-07-18:personal:admin-morden-v1:D4gyxjKF', // Fine-tuned model
         messages: [
           {
             role: 'system',
-            content: systemPrompt + `\n\nContext from Knowledge Base:\n${contextBlock}`
+            content: systemPrompt // No need to include contextBlock - knowledge is in the model!
           },
           {
             role: 'user',
             content: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`
           }
         ],
-        temperature: strictMode ? 0.3 : 0.7, // Lower temperature in strict mode
-        max_tokens: 500, // Increased for better responses
+        temperature: strictMode ? 0.3 : 0.7,
+        max_tokens: 500,
       }),
       new Promise((_, reject) => 
         setTimeout(() => reject(new Error('AI generation timeout')), 30000) // Increased to 30s
