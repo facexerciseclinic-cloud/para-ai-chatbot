@@ -57,8 +57,8 @@ export default function KnowledgePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center py-10 font-sans text-slate-800">
-      <div className="w-full max-w-4xl px-4">
+    <div className="min-h-screen bg-gray-50 py-10 font-sans text-slate-800 overflow-y-auto">
+      <div className="w-full max-w-4xl px-4 mx-auto">{' '}
         
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
@@ -118,7 +118,7 @@ export default function KnowledgePage() {
         </div>
 
         {/* Knowledge List */}
-        <div className="space-y-4">
+        <div className="space-y-4 pb-20">
             <h2 className="text-sm font-semibold text-gray-700 px-1">Recent Knowledge ({items.length})</h2>
             {loading ? (
                 <div className="text-center py-10 text-gray-400 text-sm">Loading knowledge...</div>
