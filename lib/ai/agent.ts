@@ -88,7 +88,7 @@ export async function generateAIResponse(conversationId: string, userMessage: st
         const { data: relevantDocs } = await supabaseAdmin.rpc('match_documents', {
           query_embedding: embedding,
           match_threshold: minConfidence,
-          match_count: 5 // Get top 5 most relevant
+          match_count: 3 // Get top 3 most relevant (faster)
         });
         
         console.log(`✅ Found ${relevantDocs?.length || 0} relevant documents`);
@@ -222,10 +222,10 @@ export async function generateAIResponse(conversationId: string, userMessage: st
           }
         ],
         temperature: strictMode ? 0.3 : 0.7,
-        max_tokens: 300,
+        max_tokens: 200, // Reduced for faster response
       }),
       new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error('AI generation timeout')), 25000) // 25s timeout (before Vercel 30s limit)
+        setTimeout(() => reject(new Error('AI generation timeout')), 8000) // 8s timeout - fail fast
       )
     ]) as OpenAI.Chat.Completions.ChatCompletion;
     
