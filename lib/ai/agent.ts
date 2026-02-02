@@ -163,30 +163,57 @@ export async function generateAIResponse(conversationId: string, userMessage: st
 - If the answer is not in the context, say: "${fallbackMessage}"`;
     }
     
-    const completion = await Promise.race([
-      openaiClient.chat.completions.create({
-        model: useFinetunedModel 
-          ? 'ft:gpt-4o-mini-2024-07-18:personal:drdenv2:D4iJpcog' 
-          : 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: useFinetunedModel && !contextBlock
-              ? systemPrompt // Fine-tuned: no context needed
-              : systemPrompt + `\n\nContext from Knowledge Base:\n${contextBlock}` // Base model or new data
-          },
-          {
-            role: 'user',
-            content: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`
-          }
-        ],
-        temperature: strictMode ? 0.3 : 0.7,
-        max_tokens: 500,
-      }),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('AI generation timeout')), 60000) // Increased to 60s for fine-tuned model
-      )
-    ]) as OpenAI.Chat.Completions.ChatCompletion;
+    // Try fine-tuned model first, fallback to base model on timeout
+    let completion: OpenAI.Chat.Completions.ChatCompletion;
+    
+    try {
+      completion = await Promise.race([
+        openaiClient.chat.completions.create({
+          model: useFinetunedModel 
+            ? 'ft:gpt-4o-mini-2024-07-18:personal:drdenv2:D4iJpcog' 
+            : 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: useFinetunedModel && !contextBlock
+                ? systemPrompt // Fine-tuned: no context needed
+                : systemPrompt + `\n\nContext from Knowledge Base:\n${contextBlock}` // Base model or new data
+            },
+            {
+              role: 'user',
+              content: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`
+            }
+          ],
+          temperature: strictMode ? 0.3 : 0.7,
+          max_tokens: 500,
+        }),
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('AI generation timeout')), 90000) // Increased to 90s
+        )
+      ]) as OpenAI.Chat.Completions.ChatCompletion;
+    } catch (error: any) {
+      if (error.message === 'AI generation timeout' && useFinetunedModel) {
+        console.warn('⚠️ Fine-tuned model timeout, falling back to base model...');
+        // Fallback to base model with RAG
+        completion = await openaiClient.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: systemPrompt + `\n\nContext from Knowledge Base:\n${contextBlock}`
+            },
+            {
+              role: 'user',
+              content: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`
+            }
+          ],
+          temperature: strictMode ? 0.3 : 0.7,
+          max_tokens: 500,
+        });
+      } else {
+        throw error;
+      }
+    }
     
     const text = completion.choices[0]?.message?.content || '';
     
