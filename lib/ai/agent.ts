@@ -165,57 +165,82 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     
     // Try fine-tuned model first, fallback to base model on timeout
     let completion: OpenAI.Chat.Completions.ChatCompletion;
+    let usedFallback = false;
     
-    try {
-      completion = await Promise.race([
-        openaiClient.chat.completions.create({
-          model: useFinetunedModel 
-            ? 'ft:gpt-4o-mini-2024-07-18:personal:drdenv2:D4iJpcog' 
-            : 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content: useFinetunedModel && !contextBlock
-                ? systemPrompt // Fine-tuned: no context needed
-                : systemPrompt + `\n\nContext from Knowledge Base:\n${contextBlock}` // Base model or new data
-            },
-            {
-              role: 'user',
-              content: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`
-            }
-          ],
-          temperature: strictMode ? 0.3 : 0.7,
-          max_tokens: 500,
-        }),
-        new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('AI generation timeout')), 20000) // 20s - fallback quickly
-        )
-      ]) as OpenAI.Chat.Completions.ChatCompletion;
-    } catch (error: any) {
-      if (error.message === 'AI generation timeout' && useFinetunedModel) {
-        console.warn('⚠️ Fine-tuned model timeout, falling back to base model...');
-        // Fallback to base model with RAG
-        completion = await openaiClient.chat.completions.create({
-          model: 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content: systemPrompt + `\n\nContext from Knowledge Base:\n${contextBlock}`
-            },
-            {
-              role: 'user',
-              content: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`
-            }
-          ],
-          temperature: strictMode ? 0.3 : 0.7,
-          max_tokens: 500,
-        });
-      } else {
-        throw error;
+    if (useFinetunedModel) {
+      try {
+        completion = await Promise.race([
+          openaiClient.chat.completions.create({
+            model: 'ft:gpt-4o-mini-2024-07-18:personal:drdenv2:D4iJpcog',
+            messages: [
+              {
+                role: 'system',
+                content: !contextBlock ? systemPrompt : systemPrompt + `\n\nContext from Knowledge Base:\n${contextBlock}`
+              },
+              {
+                role: 'user',
+                content: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`
+              }
+            ],
+            temperature: strictMode ? 0.3 : 0.7,
+            max_tokens: 300, // Reduced for faster response
+          }),
+          new Promise<never>((_, reject) => 
+            setTimeout(() => reject(new Error('AI generation timeout')), 15000) // 15s timeout
+          )
+        ]) as OpenAI.Chat.Completions.ChatCompletion;
+      } catch (error: any) {
+        if (error.message === 'AI generation timeout') {
+          console.warn('⚠️ Fine-tuned model timeout (15s), falling back to base model...');
+          usedFallback = true;
+          // Fallback to base model with RAG
+          completion = await openaiClient.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+              {
+                role: 'system',
+                content: systemPrompt + `\n\nContext from Knowledge Base:\n${contextBlock}`
+              },
+              {
+                role: 'user',
+                content: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`
+              }
+            ],
+            temperature: strictMode ? 0.3 : 0.7,
+            max_tokens: 300,
+          });
+        } else {
+          throw error;
+        }
       }
+    } else {
+      // Base model
+      completion = await openaiClient.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt + `\n\nContext from Knowledge Base:\n${contextBlock}`
+          },
+          {
+            role: 'user',
+            content: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`
+          }
+        ],
+        temperature: strictMode ? 0.3 : 0.7,
+        max_tokens: 300,
+      });
     }
     
     const text = completion.choices[0]?.message?.content || '';
+    
+    if (usedFallback) {
+      console.log('✅ Response generated using fallback base model');
+    } else if (useFinetunedModel) {
+      console.log('✅ Response generated using fine-tuned model');
+    } else {
+      console.log('✅ Response generated using base model');
+    }
     
     // Token usage and cost calculation
     const usage = completion.usage;
