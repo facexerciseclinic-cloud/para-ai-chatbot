@@ -35,7 +35,7 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     const { data: settings } = await supabaseAdmin
       .from('ai_settings')
       .select('key, value')
-      .in('key', ['strict_mode', 'require_knowledge', 'fallback_message', 'min_confidence']);
+      .in('key', ['strict_mode', 'require_knowledge', 'fallback_message', 'min_confidence', 'use_finetuned_model']);
     
     const settingsMap = new Map(settings?.map(s => [s.key, s.value]) || []);
     // Parse JSONB boolean values properly
@@ -43,8 +43,9 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     const requireKnowledge = settingsMap.get('require_knowledge') === true || settingsMap.get('require_knowledge') === 'true';
     const fallbackMessage = settingsMap.get('fallback_message') || 'ขอโทษค่ะ ตอนนี้ผมยังไม่มีข้อมูลเกี่ยวกับเรื่องนี้ รบกวนติดต่อเจ้าหน้าที่โดยตรงได้เลยนะคะ';
     const minConfidence = Number(settingsMap.get('min_confidence')) || 0.5;
+    const useFinetunedModel = settingsMap.get('use_finetuned_model') === true || settingsMap.get('use_finetuned_model') === 'true';
     
-    console.log('⚙️ AI Settings:', { strictMode, requireKnowledge, minConfidence });
+    console.log('⚙️ AI Settings:', { strictMode, requireKnowledge, minConfidence, useFinetunedModel });
 
     console.log('🤖 [Step 1] Loading conversation history...');
     // 1. Context Loading: Fetch last 5 messages (reduced from 10 for speed)
@@ -68,10 +69,13 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     
     console.log(`✅ [Step 1] Loaded ${history?.length || 0} messages`);
 
-    // 2. Smart RAG: General (all) + Relevant (semantic search)
-    console.log('📚 [Step 2] Loading knowledge base (Smart RAG)...');
+    // 2. Smart RAG: Load new knowledge that wasn't in fine-tuning
+    console.log('📚 [Step 2] Checking for new knowledge...');
     let contextBlock = "";
     
+    // Only load RAG context if NOT using fine-tuned model, or to supplement with new data
+    if (!useFinetunedModel) {
+      console.log('🔍 Using RAG (no fine-tuned model)');
     try {
       // 2.1 Always load ALL General guidelines (must-know rules)
       console.log('📋 [Step 2.1] Loading General guidelines...');
@@ -102,9 +106,6 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       
       // Combine: General (all) + Relevant (top 5)
       contextBlock = generalContext 
-        ? (relevantContext ? `${generalContext}\n---\n${relevantContext}` : generalContext)
-        : relevantContext;
-      
       console.log(`📊 Total context length: ${contextBlock.length} chars`);
       
       // Truncate if still too long (safety net)
@@ -112,6 +113,24 @@ export async function generateAIResponse(conversationId: string, userMessage: st
         console.warn(`⚠️ Context too long (${contextBlock.length} chars), truncating...`);
         contextBlock = contextBlock.substring(0, 10000) + '\n\n[... more knowledge available ...]';
       }
+    } else {
+      console.log('🎓 Using fine-tuned model - knowledge embedded in model');
+      // Optionally load only very recent knowledge (last 7 days) to supplement
+      const { data: recentKnowledge } = await supabaseAdmin
+        .from('knowledge_base')
+        .select('content')
+        .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+        .not('embedding', 'is', null)
+        .limit(3);
+      
+      if (recentKnowledge && recentKnowledge.length > 0) {
+        contextBlock = '📌 Recent Updates:\n' + recentKnowledge.map(k => k.content).join('\n---\n');
+        console.log(`✅ Loaded ${recentKnowledge.length} recent knowledge items (last 7 days)`);
+      }
+    }
+      
+      // Check if knowledge is required but not found
+      if (requireKnowledge && !contextBlock && !useFinetunedModel) {
       
       // Check if knowledge is required but not found
       if (requireKnowledge && !contextBlock) {
@@ -128,21 +147,25 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     }
 
     // 3. Generate Response (Use OpenAI SDK directly)
-    console.log(`✨ [Step 4] Calling OpenAI API...`);
-    
-    const openaiClient = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY
-    });
-    
-    // Build system prompt with strict rules if enabled
-    let systemPrompt = SYSTEM_PROMPT;
-    if (strictMode && contextBlock) {
-      systemPrompt += `\n\n⚠️ STRICT MODE ENABLED:
-- You MUST answer ONLY from the provided "Context from Knowledge Base"
-- DO NOT make up information or use general knowledge
-- If the answer is not in the context, say: "${fallbackMessage}"`;
-    }
-    
+    const completion = await Promise.race([
+      openaiClient.chat.completions.create({
+        model: useFinetunedModel 
+          ? 'ft:gpt-4o-mini-2024-07-18:personal:admin-morden-v1:D4gyxjKF' 
+          : 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: useFinetunedModel && !contextBlock
+              ? systemPrompt // Fine-tuned: no context needed
+              : systemPrompt + `\n\nContext from Knowledge Base:\n${contextBlock}` // Base model or new data
+          },
+          {
+            role: 'user',
+            content: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`
+          }
+        ],
+        temperature: strictMode ? 0.3 : 0.7,
+        max_tokens: 500,
     const completion = await Promise.race([
       openaiClient.chat.completions.create({
         model: 'ft:gpt-4o-mini-2024-07-18:personal:admin-morden-v1:D4gyxjKF', // Fine-tuned model
