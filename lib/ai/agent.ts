@@ -78,24 +78,8 @@ export async function generateAIResponse(conversationId: string, userMessage: st
       if (!useFinetunedModel) {
         console.log('🔍 Using RAG (no fine-tuned model)');
         
-        // 2.1 Load key General guidelines (limit to most recent/important)
-        console.log('📋 [Step 2.1] Loading General guidelines...');
-        const { data: generalKnowledge } = await supabaseAdmin
-          .from('knowledge_base')
-          .select('content')
-          .eq('category', 'General')
-          .not('embedding', 'is', null)
-          .order('created_at', { ascending: false })
-          .limit(1); // Only load most recent General guideline
-        
-        const generalContext = generalKnowledge?.map(k => {
-          // Truncate each General guideline to max 3000 chars
-          return k.content.length > 3000 ? k.content.substring(0, 3000) + '...' : k.content;
-        }).join('\n---\n') || "";
-        console.log(`✅ Loaded ${generalKnowledge?.length || 0} General guidelines`);
-        
-        // 2.2 Semantic search for relevant specific knowledge
-        console.log('🔍 [Step 2.2] Semantic search for relevant knowledge...');
+        // 2.1 Semantic search FIRST - get most relevant knowledge
+        console.log('🔍 [Step 2.1] Semantic search for relevant knowledge...');
         const { embedding } = await embed({
           model: openai.embedding('text-embedding-3-small') as any,
           value: userMessage,
@@ -104,20 +88,46 @@ export async function generateAIResponse(conversationId: string, userMessage: st
         const { data: relevantDocs } = await supabaseAdmin.rpc('match_documents', {
           query_embedding: embedding,
           match_threshold: minConfidence,
-          match_count: 3 // Reduced from 5 to 3
+          match_count: 5 // Get top 5 most relevant
         });
         
-        const relevantContext = relevantDocs?.map((doc: any) => doc.content).join('\n---\n') || "";
         console.log(`✅ Found ${relevantDocs?.length || 0} relevant documents`);
         
-        // Combine: General (limited) + Relevant (top 3)
-        contextBlock = generalContext 
-          ? (relevantContext ? `${generalContext}\n---\n${relevantContext}` : generalContext)
-          : relevantContext;
+        // 2.2 Load compact General guidelines (only if needed)
+        console.log('📋 [Step 2.2] Loading Core guidelines...');
+        const { data: generalKnowledge } = await supabaseAdmin
+          .from('knowledge_base')
+          .select('content')
+          .eq('category', 'General')
+          .not('embedding', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(2); // Load both General items
+        
+        // Create compact version of General guidelines
+        const generalCompact = generalKnowledge?.map(k => {
+          // Extract only key rules (remove verbose examples)
+          const lines = k.content.split('\n');
+          const keyLines = lines.filter(line => 
+            line.includes('###') || // Headers
+            line.includes('- ') || // Bullet points
+            line.includes('**') || // Bold rules
+            line.trim().length > 0 && line.trim().length < 150 // Short important lines
+          );
+          return keyLines.slice(0, 30).join('\n'); // Max 30 key lines
+        }).join('\n---\n') || "";
+        
+        console.log(`✅ Loaded ${generalKnowledge?.length || 0} General guidelines (compacted)`);
+        
+        // Combine: Most relevant docs + Compact general
+        const relevantContext = relevantDocs?.map((doc: any) => doc.content).join('\n---\n') || "";
+        
+        contextBlock = relevantContext
+          ? `${relevantContext}\n\n### Core Guidelines:\n${generalCompact}`
+          : generalCompact;
         
         console.log(`📊 Total context length: ${contextBlock.length} chars`);
         
-        // Truncate if still too long (safety net)
+        // Final truncate if still too long
         if (contextBlock.length > 5000) {
           console.warn(`⚠️ Context too long (${contextBlock.length} chars), truncating to 5000...`);
           contextBlock = contextBlock.substring(0, 5000) + '\n\n[... more knowledge available ...]';
