@@ -151,6 +151,21 @@ export async function generateAIResponse(conversationId: string, userMessage: st
     }
 
     // 3. Generate Response (Use OpenAI SDK directly)
+    console.log(`✨ [Step 4] Calling OpenAI API...`);
+    
+    const openaiClient = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY
+    });
+    
+    // Build system prompt with strict rules if enabled
+    let systemPrompt = SYSTEM_PROMPT;
+    if (strictMode && contextBlock) {
+      systemPrompt += `\n\n⚠️ STRICT MODE ENABLED:
+- You MUST answer ONLY from the provided "Context from Knowledge Base"
+- DO NOT make up information or use general knowledge
+- If the answer is not in the context, say: "${fallbackMessage}"`;
+    }
+    
     const completion = await Promise.race([
       openaiClient.chat.completions.create({
         model: useFinetunedModel 
@@ -162,21 +177,6 @@ export async function generateAIResponse(conversationId: string, userMessage: st
             content: useFinetunedModel && !contextBlock
               ? systemPrompt // Fine-tuned: no context needed
               : systemPrompt + `\n\nContext from Knowledge Base:\n${contextBlock}` // Base model or new data
-          },
-          {
-            role: 'user',
-            content: `Chat History:\n${formattedHistory}\n\nUser: ${userMessage}`
-          }
-        ],
-        temperature: strictMode ? 0.3 : 0.7,
-        max_tokens: 500,
-    const completion = await Promise.race([
-      openaiClient.chat.completions.create({
-        model: 'ft:gpt-4o-mini-2024-07-18:personal:admin-morden-v1:D4gyxjKF', // Fine-tuned model
-        messages: [
-          {
-            role: 'system',
-            content: systemPrompt // No need to include contextBlock - knowledge is in the model!
           },
           {
             role: 'user',
