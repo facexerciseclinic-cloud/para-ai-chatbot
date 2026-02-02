@@ -1,6 +1,6 @@
 {
   "functions": {
-    "app/api/webhooks/line/route.ts": {
+    "app/api/**": {
       "maxDuration": 60
     }
   }
